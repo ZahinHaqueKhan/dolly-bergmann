@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncpg
+pydantic-settings
+python-jose[cryptography]
+argon2-cffi
+redis
+stripe
+python-multipart
+alembic
+pytest
+httpx
