@@ -12,8 +12,9 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
 
-    SAIA_API_URL: str = ""
+    SAIA_API_URL: str = "https://chat-ai.academiccloud.de/v1"
     SAIA_API_KEY: str = ""
+    SAIA_MODEL: str = "qwen3.5-397b-a17b"
 
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"

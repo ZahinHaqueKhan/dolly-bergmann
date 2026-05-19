@@ -1,7 +1,8 @@
+import os
 import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import decode_token
@@ -13,9 +14,31 @@ router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 
 request_counts: dict[str, list[float]] = {}
 
+PRODUCT_FAQ_SYSTEM_PROMPT = """You are a knowledgeable and friendly AI assistant for ModestWear, an online modest fashion store selling dresses, khimar (headscarves), abaya, and related modest clothing.
 
-class RateLimitExceeded(Exception):
-    pass
+Your role is to help customers with:
+- Product information (sizes, colors, materials, fit)
+- Shipping times, costs, and options
+- Return and exchange policies
+- Size guide and measurement assistance
+- Order status (if the user is authenticated)
+- General questions about modest fashion
+
+Guidelines:
+- Be respectful and helpful, especially during Ramadan or Eid
+- Do NOT share any sensitive PII or payment information
+- Do NOT process orders or payments directly
+- Keep responses concise but informative (2-4 sentences)
+- If you don't know something, say so and suggest contacting support@modestwear.com
+- Always prioritize customer safety and satisfaction
+
+The store's key policies:
+- Free shipping on orders over $100
+- 30-day returns
+- Sizes range from XS to 2XL
+- Standard delivery: 5-7 business days
+- Express delivery: 2-3 business days
+"""
 
 
 def check_rate_limit(client_ip: str, limit: int = 10, window: int = 60) -> bool:
@@ -34,11 +57,19 @@ def check_rate_limit(client_ip: str, limit: int = 10, window: int = 60) -> bool:
     return True
 
 
+def get_saia_client():
+    from openai import AsyncOpenAI
+    return AsyncOpenAI(
+        api_key=settings.SAIA_API_KEY,
+        base_url=settings.SAIA_API_URL,
+    )
+
+
 @router.post("")
 async def chatbot_message(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    x_session_id: str | None = Header(None),
+    x_session_id: Optional[str] = Header(None),
     token_data=Depends(decode_token),
 ):
     client_ip = request.client.host if request.client else "unknown"
@@ -50,58 +81,62 @@ async def chatbot_message(
         )
 
     body = await request.json()
-    message = body.get("message", "")
+    user_message = body.get("message", "").strip()
 
-    if not message:
+    if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    user_context = None
-    if token_data:
-        user_context = {"user_id": token_data.user_id, "is_authenticated": True}
-    else:
-        user_context = {"session_id": x_session_id, "is_authenticated": False}
+    if len(user_message) > 500:
+        user_message = user_message[:500]
 
-    import httpx
+    user_context = ""
+    if token_data:
+        user_context = f"The user is authenticated (user_id: {token_data.user_id})."
+    else:
+        user_context = "The user is a guest (not authenticated)."
+
+    messages = [
+        {"role": "system", "content": PRODUCT_FAQ_SYSTEM_PROMPT},
+        {"role": "system", "content": f"Context: {user_context}"},
+        {"role": "user", "content": user_message},
+    ]
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{settings.SAIA_API_URL}/chat",
-                json={
-                    "message": message,
-                    "context": user_context,
-                },
-                headers={"Authorization": f"Bearer {settings.SAIA_API_KEY}"},
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            saia_response = response.json()
+        client = get_saia_client()
+        response = await client.chat.completions.create(
+            model=settings.SAIA_MODEL,
+            messages=messages,
+            max_tokens=300,
+            temperature=0.7,
+        )
+        answer = response.choices[0].message.content
 
-    except httpx.HTTPError as e:
+    except Exception as e:
         chatbot_log = ChatbotLog(
             user_id=token_data.user_id if token_data else None,
             session_id=x_session_id,
-            question=message,
+            question=user_message,
             response=None,
             error=str(e),
         )
         db.add(chatbot_log)
         await db.commit()
 
-        raise HTTPException(status_code=503, detail="Chatbot service unavailable")
-
-    if not saia_response.get("answer"):
-        chatbot_log = ChatbotLog(
-            user_id=token_data.user_id if token_data else None,
-            session_id=x_session_id,
-            question=message,
-            response=None,
-            error="No answer from SAIA",
+        raise HTTPException(
+            status_code=503,
+            detail="Chatbot service unavailable. Please try again later.",
         )
-        db.add(chatbot_log)
-        await db.commit()
+
+    chatbot_log = ChatbotLog(
+        user_id=token_data.user_id if token_data else None,
+        session_id=x_session_id,
+        question=user_message,
+        response=answer,
+    )
+    db.add(chatbot_log)
+    await db.commit()
 
     return {
-        "answer": saia_response.get("answer", "I'm not sure about that."),
-        "sources": saia_response.get("sources", []),
+        "response": answer,
+        "sources": [],
     }
