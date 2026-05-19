@@ -1,0 +1,364 @@
+{
+  "products": [
+    {
+      "name": "Classic Denim Jacket",
+      "slug": "classic-denim-jacket",
+      "description": "A timeless denim jacket crafted from premium cotton. Features classic button closure, chest pockets, and a comfortable regular fit. Perfect for layering in any season.",
+      "category": "Jackets",
+      "tags": ["denim", "outerwear", "classic", "unisex"],
+      "variants": [
+        {
+          "size": "S",
+          "color": "Blue",
+          "price": 8900,
+          "stock": 15,
+          "sku": "CDJ-BLU-S",
+          "images": ["/products/denim-jacket-blue-1.jpg", "/products/denim-jacket-blue-2.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "Blue",
+          "price": 8900,
+          "stock": 25,
+          "sku": "CDJ-BLU-M",
+          "images": ["/products/denim-jacket-blue-1.jpg", "/products/denim-jacket-blue-2.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Blue",
+          "price": 8900,
+          "stock": 20,
+          "sku": "CDJ-BLU-L",
+          "images": ["/products/denim-jacket-blue-1.jpg", "/products/denim-jacket-blue-2.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "Black",
+          "price": 8900,
+          "stock": 18,
+          "sku": "CDJ-BLK-M",
+          "images": ["/products/denim-jacket-black-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Organic Cotton T-Shirt",
+      "slug": "organic-cotton-tshirt",
+      "description": "Soft and breathable t-shirt made from 100% organic cotton. Features a relaxed fit and reinforced seams for durability. Available in multiple colors.",
+      "category": "T-Shirts",
+      "tags": ["organic", "cotton", "casual", "sustainable"],
+      "variants": [
+        {
+          "size": "XS",
+          "color": "White",
+          "price": 3500,
+          "stock": 30,
+          "sku": "OCT-WHT-XS",
+          "images": ["/products/tshirt-white-1.jpg"]
+        },
+        {
+          "size": "S",
+          "color": "White",
+          "price": 3500,
+          "stock": 50,
+          "sku": "OCT-WHT-S",
+          "images": ["/products/tshirt-white-1.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "White",
+          "price": 3500,
+          "stock": 45,
+          "sku": "OCT-WHT-M",
+          "images": ["/products/tshirt-white-1.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "White",
+          "price": 3500,
+          "stock": 40,
+          "sku": "OCT-WHT-L",
+          "images": ["/products/tshirt-white-1.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "Navy",
+          "price": 3500,
+          "stock": 35,
+          "sku": "OCT-NVY-M",
+          "images": ["/products/tshirt-navy-1.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Navy",
+          "price": 3500,
+          "stock": 30,
+          "sku": "OCT-NVY-L",
+          "images": ["/products/tshirt-navy-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Slim Fit Chinos",
+      "slug": "slim-fit-chinos",
+      "description": "Modern slim fit chinos made from stretch cotton twill. Features side pockets, back welt pockets with button closure, and a zip fly. Versatile enough for both casual and smart-casual occasions.",
+      "category": "Pants",
+      "tags": ["chinos", "slim-fit", "cotton", "stretch"],
+      "variants": [
+        {
+          "size": "30",
+          "color": "Khaki",
+          "price": 6900,
+          "stock": 20,
+          "sku": "SFC-KHK-30",
+          "images": ["/products/chinos-khaki-1.jpg", "/products/chinos-khaki-2.jpg"]
+        },
+        {
+          "size": "32",
+          "color": "Khaki",
+          "price": 6900,
+          "stock": 25,
+          "sku": "SFC-KHK-32",
+          "images": ["/products/chinos-khaki-1.jpg", "/products/chinos-khaki-2.jpg"]
+        },
+        {
+          "size": "34",
+          "color": "Khaki",
+          "price": 6900,
+          "stock": 22,
+          "sku": "SFC-KHK-34",
+          "images": ["/products/chinos-khaki-1.jpg", "/products/chinos-khaki-2.jpg"]
+        },
+        {
+          "size": "32",
+          "color": "Navy",
+          "price": 6900,
+          "stock": 18,
+          "sku": "SFC-NVY-32",
+          "images": ["/products/chinos-navy-1.jpg"]
+        },
+        {
+          "size": "34",
+          "color": "Navy",
+          "price": 6900,
+          "stock": 15,
+          "sku": "SFC-NVY-34",
+          "images": ["/products/chinos-navy-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Wool Blend Overcoat",
+      "slug": "wool-blend-overcoat",
+      "description": "Elegant wool blend overcoat with a modern silhouette. Features notched lapels, two-button closure, side pockets, and a fully lined interior. Perfect for formal occasions and cold weather.",
+      "category": "Coats",
+      "tags": ["wool", "overcoat", "formal", "winter"],
+      "variants": [
+        {
+          "size": "M",
+          "color": "Charcoal",
+          "price": 24900,
+          "stock": 8,
+          "sku": "WBO-CHR-M",
+          "images": ["/products/overcoat-charcoal-1.jpg", "/products/overcoat-charcoal-2.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Charcoal",
+          "price": 24900,
+          "stock": 10,
+          "sku": "WBO-CHR-L",
+          "images": ["/products/overcoat-charcoal-1.jpg", "/products/overcoat-charcoal-2.jpg"]
+        },
+        {
+          "size": "XL",
+          "color": "Charcoal",
+          "price": 24900,
+          "stock": 6,
+          "sku": "WBO-CHR-XL",
+          "images": ["/products/overcoat-charcoal-1.jpg", "/products/overcoat-charcoal-2.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Camel",
+          "price": 24900,
+          "stock": 5,
+          "sku": "WBO-CML-L",
+          "images": ["/products/overcoat-camel-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Leather Chelsea Boots",
+      "slug": "leather-chelsea-boots",
+      "description": "Classic Chelsea boots crafted from full-grain leather. Features elastic side panels, pull tabs, and a durable rubber sole. Handcrafted with Goodyear welt construction for long-lasting wear.",
+      "category": "Shoes",
+      "tags": ["leather", "boots", "chelsea", "handcrafted"],
+      "variants": [
+        {
+          "size": "40",
+          "color": "Brown",
+          "price": 18900,
+          "stock": 12,
+          "sku": "LCB-BRN-40",
+          "images": ["/products/chelsea-boots-brown-1.jpg", "/products/chelsea-boots-brown-2.jpg"]
+        },
+        {
+          "size": "41",
+          "color": "Brown",
+          "price": 18900,
+          "stock": 15,
+          "sku": "LCB-BRN-41",
+          "images": ["/products/chelsea-boots-brown-1.jpg", "/products/chelsea-boots-brown-2.jpg"]
+        },
+        {
+          "size": "42",
+          "color": "Brown",
+          "price": 18900,
+          "stock": 14,
+          "sku": "LCB-BRN-42",
+          "images": ["/products/chelsea-boots-brown-1.jpg", "/products/chelsea-boots-brown-2.jpg"]
+        },
+        {
+          "size": "43",
+          "color": "Brown",
+          "price": 18900,
+          "stock": 10,
+          "sku": "LCB-BRN-43",
+          "images": ["/products/chelsea-boots-brown-1.jpg", "/products/chelsea-boots-brown-2.jpg"]
+        },
+        {
+          "size": "42",
+          "color": "Black",
+          "price": 18900,
+          "stock": 8,
+          "sku": "LCB-BLK-42",
+          "images": ["/products/chelsea-boots-black-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Minimalist Leather Watch",
+      "slug": "minimalist-leather-watch",
+      "description": "Elegant minimalist watch with a clean dial and genuine leather strap. Features Japanese quartz movement, sapphire crystal glass, and water resistance up to 50 meters. A timeless accessory for any occasion.",
+      "category": "Accessories",
+      "tags": ["watch", "leather", "minimalist", "japanese-movement"],
+      "variants": [
+        {
+          "size": "38mm",
+          "color": "Tan",
+          "price": 15900,
+          "stock": 20,
+          "sku": "MLW-TAN-38",
+          "images": ["/products/watch-tan-1.jpg", "/products/watch-tan-2.jpg"]
+        },
+        {
+          "size": "42mm",
+          "color": "Tan",
+          "price": 16900,
+          "stock": 18,
+          "sku": "MLW-TAN-42",
+          "images": ["/products/watch-tan-1.jpg", "/products/watch-tan-2.jpg"]
+        },
+        {
+          "size": "38mm",
+          "color": "Black",
+          "price": 15900,
+          "stock": 22,
+          "sku": "MLW-BLK-38",
+          "images": ["/products/watch-black-1.jpg"]
+        },
+        {
+          "size": "42mm",
+          "color": "Black",
+          "price": 16900,
+          "stock": 25,
+          "sku": "MLW-BLK-42",
+          "images": ["/products/watch-black-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Merino Wool Sweater",
+      "slug": "merino-wool-sweater",
+      "description": "Luxuriously soft crew neck sweater made from 100% merino wool. Features ribbed cuffs and hem, and a comfortable regular fit. Naturally temperature-regulating and odor-resistant.",
+      "category": "Sweaters",
+      "tags": ["merino", "wool", "crew-neck", "natural-fiber"],
+      "variants": [
+        {
+          "size": "S",
+          "color": "Grey",
+          "price": 12900,
+          "stock": 16,
+          "sku": "MWS-GRY-S",
+          "images": ["/products/sweater-grey-1.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "Grey",
+          "price": 12900,
+          "stock": 20,
+          "sku": "MWS-GRY-M",
+          "images": ["/products/sweater-grey-1.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Grey",
+          "price": 12900,
+          "stock": 18,
+          "sku": "MWS-GRY-L",
+          "images": ["/products/sweater-grey-1.jpg"]
+        },
+        {
+          "size": "M",
+          "color": "Burgundy",
+          "price": 12900,
+          "stock": 14,
+          "sku": "MWS-BRG-M",
+          "images": ["/products/sweater-burgundy-1.jpg"]
+        },
+        {
+          "size": "L",
+          "color": "Burgundy",
+          "price": 12900,
+          "stock": 12,
+          "sku": "MWS-BRG-L",
+          "images": ["/products/sweater-burgundy-1.jpg"]
+        }
+      ]
+    },
+    {
+      "name": "Canvas Weekend Bag",
+      "slug": "canvas-weekend-bag",
+      "description": "Durable canvas weekend bag with leather accents. Features a spacious main compartment, front zip pocket, and adjustable shoulder strap. Perfect for short trips and getaways.",
+      "category": "Bags",
+      "tags": ["canvas", "travel", "weekend-bag", "leather-accent"],
+      "variants": [
+        {
+          "size": "One Size",
+          "color": "Olive",
+          "price": 9900,
+          "stock": 25,
+          "sku": "CWB-OLV-OS",
+          "images": ["/products/weekend-bag-olive-1.jpg", "/products/weekend-bag-olive-2.jpg"]
+        },
+        {
+          "size": "One Size",
+          "color": "Navy",
+          "price": 9900,
+          "stock": 22,
+          "sku": "CWB-NVY-OS",
+          "images": ["/products/weekend-bag-navy-1.jpg", "/products/weekend-bag-navy-2.jpg"]
+        },
+        {
+          "size": "One Size",
+          "color": "Tan",
+          "price": 9900,
+          "stock": 18,
+          "sku": "CWB-TAN-OS",
+          "images": ["/products/weekend-bag-tan-1.jpg"]
+        }
+      ]
+    }
+  ]
+}
