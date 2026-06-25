@@ -1,8 +1,8 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
 
 from app.models.base import Base
 
@@ -17,10 +17,10 @@ class Product(Base):
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id"), nullable=False
     )
-    images: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    images: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     meta_title: Mapped[str | None] = mapped_column(String, nullable=True)
     meta_description: Mapped[str | None] = mapped_column(String, nullable=True)
-    tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

@@ -1,8 +1,8 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
 
 from app.models.base import Base
 
@@ -18,7 +18,7 @@ class Order(Base):
         String, default="pending", nullable=False
     )
     total: Mapped[int] = mapped_column(Integer, nullable=False)
-    shipping_address: Mapped[dict] = mapped_column(JSON, nullable=False)
+    shipping_address: Mapped[dict] = mapped_column(JSONB, nullable=False)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(
         String, nullable=True
     )

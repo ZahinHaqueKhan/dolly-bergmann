@@ -1,8 +1,8 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
 
 from app.models.base import Base
 
@@ -19,7 +19,7 @@ class Variant(Base):
     sku: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     stock: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    images: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    images: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
