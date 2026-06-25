@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.service import decode_token
 from app.database import get_db
@@ -36,7 +37,7 @@ async def list_products(
     page_size: int = Query(20, ge=1, le=100),
 ):
     offset = (page - 1) * page_size
-    stmt = select(Product).options()
+    stmt = select(Product).options(selectinload(Product.variants))
 
     if category:
         stmt = stmt.join(Category).where(Category.slug == category)
@@ -98,7 +99,7 @@ async def list_products(
 
 @router.get("/{slug}", response_model=dict)
 async def get_product(slug: str, db: AsyncSession = Depends(get_db)):
-    stmt = select(Product).where(Product.slug == slug)
+    stmt = select(Product).options(selectinload(Product.variants)).where(Product.slug == slug)
     result = await db.execute(stmt)
     product = result.scalar_one_or_none()
 
