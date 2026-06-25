@@ -105,6 +105,38 @@ async def list_products(
     ]
 
 
+def _product_to_dict(p: Product) -> dict:
+    """Full product detail (admin view). Includes variant images and
+    is_active so the admin form can show and toggle them.
+    """
+    return {
+        "id": p.id,
+        "name": p.name,
+        "slug": p.slug,
+        "description": p.description,
+        "category_id": p.category_id,
+        "images": p.images,
+        "meta_title": p.meta_title,
+        "meta_description": p.meta_description,
+        "tags": p.tags,
+        "is_active": p.is_active,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+        "variants": [
+            {
+                "id": v.id,
+                "size": v.size,
+                "color": v.color,
+                "price": v.price,
+                "stock": v.stock,
+                "sku": v.sku,
+                "images": v.images,
+            }
+            for v in p.variants
+        ],
+    }
+
+
 @router.get("/{slug}", response_model=dict)
 async def get_product(slug: str, db: AsyncSession = Depends(get_db)):
     stmt = (
@@ -121,31 +153,7 @@ async def get_product(slug: str, db: AsyncSession = Depends(get_db)):
             detail="Product not found",
         )
 
-    return {
-        "id": product.id,
-        "name": product.name,
-        "slug": product.slug,
-        "description": product.description,
-        "category_id": product.category_id,
-        "images": product.images,
-        "meta_title": product.meta_title,
-        "meta_description": product.meta_description,
-        "tags": product.tags,
-        "created_at": product.created_at,
-        "updated_at": product.updated_at,
-        "variants": [
-            {
-                "id": v.id,
-                "size": v.size,
-                "color": v.color,
-                "price": v.price,
-                "stock": v.stock,
-                "sku": v.sku,
-                "images": v.images,
-            }
-            for v in product.variants
-        ],
-    }
+    return _product_to_dict(product)
 
 
 @router.post("", response_model=dict)
@@ -244,6 +252,9 @@ async def update_product(
         else:
             product.category_id = category.id
 
+    if "is_active" in product_data:
+        product.is_active = bool(product_data["is_active"])
+
     await db.commit()
     await db.refresh(product)
 
@@ -270,3 +281,67 @@ async def delete_product(
     await db.commit()
 
     return {"message": "Product deleted"}
+
+
+# ---- Admin-only: get product by ID, bulk actions, and variant updates ----
+
+@router.get("/admin/{product_id}", response_model=dict)
+async def admin_get_product(
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+):
+    stmt = (
+        select(Product)
+        .options(selectinload(Product.variants))
+        .where(Product.id == product_id)
+    )
+    product = (await db.execute(stmt)).scalar_one_or_none()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return _product_to_dict(product)
+
+
+@router.post("/admin/bulk-active", response_model=dict)
+async def admin_bulk_active(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+):
+    """Toggle is_active for a list of product IDs.
+
+    payload: {"ids": [int, int, ...], "is_active": bool}
+    """
+    ids = payload.get("ids") or []
+    is_active = bool(payload.get("is_active"))
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        raise HTTPException(status_code=400, detail="ids must be list[int]")
+    if not ids:
+        return {"updated": 0}
+    result = await db.execute(
+        select(Product).where(Product.id.in_(ids))
+    )
+    products = result.scalars().all()
+    for p in products:
+        p.is_active = is_active
+    await db.commit()
+    return {"updated": len(products), "ids": ids, "is_active": is_active}
+
+
+@router.post("/admin/bulk-delete", response_model=dict)
+async def admin_bulk_delete(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+):
+    ids = payload.get("ids") or []
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        raise HTTPException(status_code=400, detail="ids must be list[int]")
+    if not ids:
+        return {"deleted": 0}
+    result = await db.execute(select(Product).where(Product.id.in_(ids)))
+    products = result.scalars().all()
+    for p in products:
+        await db.delete(p)
+    await db.commit()
+    return {"deleted": len(products), "ids": ids}
