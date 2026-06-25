@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     STRIPE_PUBLIC_KEY: str = ""
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    CURRENCY: str = "usd"
 
     SAIA_API_URL: str = "https://chat-ai.academiccloud.de/v1"
     SAIA_API_KEY: str = ""

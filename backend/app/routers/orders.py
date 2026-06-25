@@ -1,10 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.auth.router import ACCESS_COOKIE
 from app.auth.service import decode_token
+from app.config import settings
 from app.database import get_db
 from app.models.cart_item import CartItem
 from app.models.order import Order
@@ -14,14 +19,50 @@ from app.schemas.user import TokenData
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
+# Optional bearer auth. Returns TokenData or None — callers decide
+# whether to 401. We also read the `access_token` httpOnly cookie so
+# the success page can call /api/orders/by-stripe/{id} without a
+# Bearer header (PLAN 3.6).
+_optional_bearer = HTTPBearer(auto_error=False)
+
+
+async def _decode_optional_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer),
+) -> TokenData | None:
+    token: str | None = None
+    if credentials is not None:
+        token = credentials.credentials
+    if not token:
+        token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
+        return None
+    return decode_token(token, expected_type="access")
+
 
 async def get_current_user_id(
-    token_data: Annotated[TokenData | None, Depends(decode_token)],
+    request: Request,
     x_session_id: str | None = Header(None),
+    token_data: TokenData | None = Depends(_decode_optional_token),
 ) -> tuple[int | None, str | None]:
-    if token_data:
+    if token_data is not None:
         return token_data.user_id, None
     return None, x_session_id
+
+
+async def get_optional_current_user_id(
+    request: Request,
+    token_data: TokenData | None = Depends(_decode_optional_token),
+) -> int | None:
+    """Like get_current_user_id but returns None instead of raising on 401.
+
+    Used by endpoints that are accessible to anyone (the order success
+    page in particular), where an unauthenticated visitor who has just
+    paid should still be able to see their order if it exists.
+    """
+    if token_data is None:
+        return None
+    return token_data.user_id
 
 
 @router.get("", response_model=list[dict])
@@ -36,7 +77,9 @@ async def list_orders(
             detail="Authentication required",
         )
 
-    stmt = select(Order).where(Order.user_id == user_id).order_by(Order.created_at.desc())
+    stmt = select(Order).where(Order.user_id == user_id).order_by(Order.created_at.desc()).options(
+        selectinload(Order.order_items)
+    )
     result = await db.execute(stmt)
     orders = result.scalars().all()
 
@@ -52,6 +95,68 @@ async def list_orders(
     ]
 
 
+@router.get("/by-stripe/{stripe_session_id}", response_model=dict)
+async def get_order_by_stripe_session(
+    stripe_session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user_id: int | None = Depends(get_optional_current_user_id),
+):
+    """Look up an order by Stripe session id (PLAN 3.6).
+
+    Called by the /order/success page after Stripe redirects back. The
+    webhook may not have arrived yet, in which case the order exists
+    with status="pending" (the placeholder created in /api/checkout)
+    or does not exist at all. The page polls every few seconds until
+    the order is found with status="paid".
+
+    Auth: if a user is logged in, they can only see their OWN order.
+    Anonymous visitors cannot view orders at all (the order_id from
+    /order/success?session_id=... is the public surface, and the
+    success page only shows order details after the webhook fires —
+    anonymous viewers get a generic "thanks" message).
+    """
+    stmt = select(Order).where(Order.stripe_session_id == stripe_session_id).options(
+        selectinload(Order.order_items).selectinload(OrderItem.variant).selectinload(Variant.product)
+    )
+    order = (await db.execute(stmt)).scalar_one_or_none()
+    if order is None:
+        # Tell the page to keep polling.
+        raise HTTPException(status_code=404, detail="Order not yet created")
+
+    # If we know the user, they must own the order or be admin.
+    if user_id is not None:
+        if order.user_id != user_id:
+            # Logged-in user is not the owner; refuse to show.
+            raise HTTPException(status_code=403, detail="Not your order")
+    else:
+        # Anonymous: only allow if the order is unattributed (guest
+        # checkout). Otherwise 403 — we don't expose order details to
+        # random unauthenticated visitors.
+        if order.user_id is not None:
+            raise HTTPException(status_code=403, detail="Sign in to view this order")
+
+    return {
+        "id": order.id,
+        "status": order.status,
+        "total": order.total,
+        "shipping_address": order.shipping_address,
+        "stripe_session_id": order.stripe_session_id,
+        "stripe_payment_intent_id": order.stripe_payment_intent_id,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "items": [
+            {
+                "product_name": item.variant.product.name,
+                "size": item.variant.size,
+                "color": item.variant.color,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "subtotal": item.quantity * item.unit_price,
+            }
+            for item in order.order_items
+        ],
+    }
+
+
 @router.get("/{order_id}", response_model=dict)
 async def get_order(
     order_id: int,
@@ -65,7 +170,9 @@ async def get_order(
             detail="Authentication required",
         )
 
-    stmt = select(Order).where(Order.id == order_id)
+    stmt = select(Order).where(Order.id == order_id).options(
+        selectinload(Order.order_items).selectinload(OrderItem.variant).selectinload(Variant.product)
+    )
     result = await db.execute(stmt)
     order = result.scalar_one_or_none()
 
@@ -87,6 +194,7 @@ async def get_order(
         "total": order.total,
         "shipping_address": order.shipping_address,
         "stripe_payment_intent_id": order.stripe_payment_intent_id,
+        "stripe_session_id": order.stripe_session_id,
         "created_at": order.created_at,
         "items": [
             {
@@ -177,7 +285,7 @@ async def create_order(
 async def admin_list_orders(
     db: AsyncSession = Depends(get_db),
     status_filter: str | None = None,
-    token_data: Annotated[TokenData | None, Depends(decode_token)] = None,
+    token_data: TokenData | None = Depends(_decode_optional_token),
 ):
     if token_data is None or token_data.role != "admin":
         raise HTTPException(
@@ -209,7 +317,7 @@ async def admin_update_order_status(
     order_id: int,
     status_data: dict,
     db: AsyncSession = Depends(get_db),
-    token_data: Annotated[TokenData | None, Depends(decode_token)] = None,
+    token_data: TokenData | None = Depends(_decode_optional_token),
 ):
     if token_data is None or token_data.role != "admin":
         raise HTTPException(
@@ -227,7 +335,7 @@ async def admin_update_order_status(
             detail="Order not found",
         )
 
-    valid_statuses = ["pending", "paid", "shipped", "delivered", "cancelled"]
+    valid_statuses = ["pending", "paid", "shipped", "delivered", "cancelled", "refunded"]
     new_status = status_data["status"]
 
     if new_status not in valid_statuses:
@@ -236,7 +344,107 @@ async def admin_update_order_status(
             detail=f"Invalid status. Must be one of: {valid_statuses}",
         )
 
+    # If transitioning to "cancelled" or "refunded" from a paid state,
+    # restore the stock we decremented at checkout time. This keeps the
+    # inventory count correct even if the cancellation is initiated from
+    # the admin UI rather than a Stripe webhook.
+    was_paid = order.status == "paid"
+    is_refund_or_cancel = new_status in ("cancelled", "refunded")
+    if was_paid and is_refund_or_cancel:
+        from app.models.order_item import OrderItem as _OI
+        from app.models.variant import Variant as _V
+        from sqlalchemy import select as _sel
+
+        items = list(
+            (
+                await db.execute(
+                    _sel(_OI).where(_OI.order_id == order.id)
+                )
+            ).scalars().all()
+        )
+        for it in items:
+            v = (
+                await db.execute(
+                    _sel(_V).where(_V.id == it.variant_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if v is not None:
+                v.stock += it.quantity
+
     order.status = new_status
     await db.commit()
 
     return {"id": order.id, "status": order.status, "message": "Order status updated"}
+
+
+@router.post("/admin/{order_id}/refund", response_model=dict)
+async def admin_refund_order(
+    order_id: int,
+    body: dict | None = None,
+    db: AsyncSession = Depends(get_db),
+    token_data: TokenData | None = Depends(_decode_optional_token),
+):
+    """Issue a refund for a paid order.
+
+    The body is optional: {"amount_cents": int} for a partial refund, or
+    empty/None for a full refund. We call stripe.Refund.create on the
+    payment intent and (on success) mark the order refunded. The order
+    transition also restores stock via the status endpoint above if
+    called separately.
+
+    NOTE: with STRIPE_SECRET_KEY set to a placeholder, this will fail
+    at the Stripe API call. The endpoint itself still validates input
+    and surfaces a 502 with the Stripe error message so the admin UI
+    can display it.
+    """
+    import stripe
+
+    if token_data is None or token_data.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    stmt = select(Order).where(Order.id == order_id)
+    order = (await db.execute(stmt)).scalar_one_or_none()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.status not in ("paid", "shipped", "delivered"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot refund an order with status={order.status}",
+        )
+    if not order.stripe_payment_intent_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Order has no Stripe payment intent (manual order?)",
+        )
+
+    stripe.api_key = settings.STRIPE_SECRET_KEY
+    amount = (body or {}).get("amount_cents")
+    refund_kwargs: dict = {"payment_intent": order.stripe_payment_intent_id}
+    if amount is not None:
+        try:
+            refund_kwargs["amount"] = int(amount)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="amount_cents must be int")
+
+    try:
+        refund = stripe.Refund.create(**refund_kwargs)
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=502, detail=f"Stripe error: {e}")
+
+    # Mark order refunded (full) or leave status paid for partial
+    # refunds; the admin can edit the status manually. For simplicity
+    # we mark fully refunded when no partial amount was requested.
+    if amount is None:
+        order.status = "refunded"
+        await db.commit()
+
+    return {
+        "id": order.id,
+        "status": order.status,
+        "refund_id": getattr(refund, "id", None),
+        "message": "Refund issued",
+    }

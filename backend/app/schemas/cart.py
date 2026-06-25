@@ -7,7 +7,7 @@ class CartItemCreate(BaseModel):
 
 
 class CartItemUpdate(BaseModel):
-    quantity: int = Field(..., gt=0)
+    quantity: int = Field(..., ge=0)
 
 
 class CartItemRead(BaseModel):
@@ -19,10 +19,14 @@ class CartItemRead(BaseModel):
     color: str
     price: int
     subtotal: int
+    stock: int
+    image: str | None = None
 
 
 class CartRead(BaseModel):
     items: list[CartItemRead] = Field(default_factory=list)
     total: int = 0
     item_count: int = 0
+    # Echoed back to anonymous callers so the frontend can persist the
+    # session id (PLAN 3.1). For logged-in users this is None.
     session_id: str | None = None

@@ -20,10 +20,16 @@ class Order(Base):
     total: Mapped[int] = mapped_column(Integer, nullable=False)
     shipping_address: Mapped[dict] = mapped_column(JSONB, nullable=False)
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(
-        String, nullable=True
+        String, nullable=True, unique=True, index=True
+    )
+    stripe_session_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, unique=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
     user = relationship("User", back_populates="orders")
