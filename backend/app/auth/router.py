@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Deque
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +35,46 @@ from app.schemas.user import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 security = HTTPBearer(auto_error=False)
+
+# Cookie names for the httpOnly auth cookies (PLAN 2.5: tokens in
+# HttpOnly + SameSite=Lax cookies, never in localStorage). The values are
+# the raw JWT strings, just as they were in the JSON body previously.
+ACCESS_COOKIE = "access_token"
+REFRESH_COOKIE = "refresh_token"
+
+
+def _cookie_secure() -> bool:
+    # Set Secure when not on plain http. The dev backend runs on http://
+    # localhost:8000, so Secure=False in dev. In production (https) this
+    # becomes True automatically because FRONTEND_URL is https.
+    return settings.FRONTEND_URL.startswith("https://")
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Set the httpOnly access + refresh token cookies on the response."""
+    common = {
+        "httponly": True,
+        "secure": _cookie_secure(),
+        "samesite": "lax",
+        "path": "/",
+    }
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **common,
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **common,
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")
 
 
 # In-memory rate limit per PLAN 2.1-2.2. 5 attempts per IP per 5 minutes.
@@ -76,17 +116,28 @@ def _check_rate_limit(request: Request, bucket: str) -> None:
 
 # Access token dependency. `security` is created with `auto_error=False` so we
 # can raise a clean 401 ourselves with a consistent error body.
+#
+# Token source priority (PLAN 2.5: httpOnly cookies are the canonical
+# transport after the auth flow is wired to cookies):
+#   1. `Authorization: Bearer <jwt>` header (tests, scripts, server-to-server)
+#   2. The `access_token` httpOnly cookie (the browser-based frontend)
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    if credentials is None:
+    token: str | None = None
+    if credentials is not None:
+        token = credentials.credentials
+    if not token:
+        token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token_data = decode_token(credentials.credentials, expected_type="access")
+    token_data = decode_token(token, expected_type="access")
     if token_data is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -146,6 +197,7 @@ async def _issue_token_pair(
 async def register(
     user_data: UserCreate,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     _check_rate_limit(request, "register")
@@ -172,6 +224,7 @@ async def register(
     await db.commit()
 
     print(f"welcome email sent to {user.email}")
+    _set_auth_cookies(response, token_pair.access_token, token_pair.refresh_token)
     return token_pair
 
 
@@ -179,6 +232,7 @@ async def register(
 async def login(
     credentials: LoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     _check_rate_limit(request, "login")
@@ -200,34 +254,50 @@ async def login(
 
     token_pair = await _issue_token_pair(db, user)
     await db.commit()
+    _set_auth_cookies(response, token_pair.access_token, token_pair.refresh_token)
     return token_pair
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh(
-    body: RefreshRequest,
+    request: Request,
+    response: Response,
+    body: RefreshRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Validate, rotate, and reuse-detect a refresh token.
 
+    The token is read from (in order):
+      1. JSON body `{"refresh_token": "..."}` — for tests and CLI.
+      2. HttpOnly `refresh_token` cookie — for the frontend auto-refresh.
+
     Rotation: the old row is marked revoked_at=now AND a new row is inserted
-    whose `replaced_by_id` is the new row's id. The new raw token is returned
-    to the caller.
+    whose `replaced_by_id` is the new row's id. The new raw token is set on
+    the response cookies so the browser picks up the rotated pair.
 
     Reuse detection: if the presented token's row is already revoked, the
     entire family is revoked. This is the standard mitigation for stolen
     refresh tokens: the legitimate user will be forced to log in again, and
     any subsequent attempt by the attacker fails as well.
     """
+    raw_refresh = (
+        body.refresh_token if body is not None else None
+    ) or request.cookies.get(REFRESH_COOKIE)
+    if not raw_refresh:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No refresh token provided",
+        )
+
     # Verify the JWT itself is structurally valid first (signature, exp).
-    token_data = decode_token(body.refresh_token, expected_type="refresh")
+    token_data = decode_token(raw_refresh, expected_type="refresh")
     if token_data is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
 
-    presented_hash = hash_refresh_token(body.refresh_token)
+    presented_hash = hash_refresh_token(raw_refresh)
     result = await db.execute(
         select(RefreshToken).where(RefreshToken.hashed_token == presented_hash)
     )
@@ -250,6 +320,9 @@ async def refresh(
             .values(revoked_at=datetime.utcnow())
         )
         await db.commit()
+        # Don't clear cookies here — the attacker already has them. The
+        # legitimate user's browser will 401 on the next /me call and the
+        # frontend will redirect to /login.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token reuse detected; family revoked",
@@ -260,6 +333,7 @@ async def refresh(
         # the family — expiry is not reuse.
         row.revoked_at = datetime.utcnow()
         await db.commit()
+        _clear_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token expired",
@@ -271,6 +345,7 @@ async def refresh(
     if user is None or not user.is_active:
         row.revoked_at = datetime.utcnow()
         await db.commit()
+        _clear_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or disabled",
@@ -289,6 +364,7 @@ async def refresh(
     if new_row is not None:
         row.replaced_by_id = new_row.id
     await db.commit()
+    _set_auth_cookies(response, token_pair.access_token, token_pair.refresh_token)
     return token_pair
 
 
@@ -299,25 +375,42 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    body: LogoutRequest | None = None,
+    request: Request,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Revoke the presented refresh token. Access tokens are short-lived (15
-    min) and will expire on their own.
+    """Revoke the refresh token and clear auth cookies.
 
-    If no refresh_token is supplied, all of the user's active refresh tokens
-    are revoked (sign-everywhere-out).
+    Plan 2.5: tokens are in httpOnly cookies, so logout both (a) marks the
+    refresh-token DB row(s) revoked so the server-side session can never
+    be extended, and (b) tells the browser to drop the cookies.
+
+    The presented refresh token is read from (in order): the JSON body
+    (for tests/CLI), the `refresh_token` cookie (for the frontend). If
+    none is supplied, all of the user's active refresh tokens are revoked
+    (sign-everywhere-out).
     """
-    if body is not None and body.refresh_token is not None:
-        presented_hash = hash_refresh_token(body.refresh_token)
+    body = None
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+    presented = None
+    if isinstance(body, dict):
+        presented = body.get("refresh_token")
+    if not presented:
+        presented = request.cookies.get(REFRESH_COOKIE)
+
+    if presented:
+        presented_hash = hash_refresh_token(presented)
         result = await db.execute(
             select(RefreshToken).where(RefreshToken.hashed_token == presented_hash)
         )
         row = result.scalar_one_or_none()
         if row is not None and row.user_id == current_user.id and row.revoked_at is None:
             row.revoked_at = datetime.utcnow()
-            await db.commit()
     else:
         await db.execute(
             update(RefreshToken)
@@ -325,5 +418,6 @@ async def logout(
             .where(RefreshToken.revoked_at.is_(None))
             .values(revoked_at=datetime.utcnow())
         )
-        await db.commit()
+    await db.commit()
+    _clear_auth_cookies(response)
     return None

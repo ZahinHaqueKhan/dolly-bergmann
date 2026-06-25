@@ -5,35 +5,98 @@ interface RequestOptions {
   body?: unknown
   headers?: Record<string, string>
   requiresAuth?: boolean
+  // Internal: signal to fetchWithAuth that this is the refresh request itself
+  // (so it does not recurse when the refresh call itself 401s).
+  _isRefresh?: boolean
 }
 
-async function fetchApi<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {}, requiresAuth = false } = options
+class AuthError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+    this.name = 'AuthError'
+  }
+}
+
+let isRefreshing = false
+let refreshSubscribers: Array<() => void> = []
+
+function onRefreshed() {
+  refreshSubscribers.forEach((cb) => cb())
+  refreshSubscribers = []
+}
+
+function subscribeToRefresh(cb: () => void) {
+  refreshSubscribers.push(cb)
+}
+
+async function attemptRefresh(): Promise<boolean> {
+  if (isRefreshing) {
+    // Another request is already refreshing — wait for it to finish then
+    // retry the original request (which will now have fresh cookies).
+    await new Promise<void>((resolve) => subscribeToRefresh(resolve))
+    return true
+  }
+  isRefreshing = true
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) return false
+    onRefreshed()
+    return true
+  } catch {
+    return false
+  } finally {
+    isRefreshing = false
+  }
+}
+
+async function rawFetch<T>(
+  endpoint: string,
+  options: RequestOptions = {},
+  retryOn401: boolean = true
+): Promise<T> {
+  const { method = 'GET', body, headers = {} } = options
 
   const requestHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...headers,
   }
 
-  if (requiresAuth) {
-    const token = localStorage.getItem('auth_token')
-    if (token) {
-      requestHeaders['Authorization'] = `Bearer ${token}`
-    }
-  }
-
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: requestHeaders,
     body: body ? JSON.stringify(body) : undefined,
+    credentials: 'include',
   })
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'An error occurred' }))
-    throw new Error(error.detail || `HTTP ${response.status}`)
+  if (response.status === 401 && retryOn401 && !options._isRefresh) {
+    // Attempt one silent refresh, then retry. The auth cookies travel in
+    // both directions, so a successful refresh sets new cookies and the
+    // retry picks them up.
+    const refreshed = await attemptRefresh()
+    if (refreshed) {
+      return rawFetch<T>(endpoint, options, false)
+    }
+    // Refresh failed — surface as a real 401 so callers can clear state.
   }
 
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: 'An error occurred' }))
+    throw new AuthError(error.detail || `HTTP ${response.status}`, response.status)
+  }
+
+  if (response.status === 204) return undefined as T
   return response.json()
+}
+
+async function fetchApi<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  return rawFetch<T>(endpoint, options, true)
 }
 
 // Products
@@ -68,42 +131,41 @@ export async function getCategories() {
 }
 
 // Cart
+function cartHeaders(sessionId?: string): Record<string, string> {
+  return sessionId ? { 'X-Session-Id': sessionId } : {}
+}
+
 export async function getCart(sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
-  return fetchApi('/api/cart', { headers })
+  return fetchApi('/api/cart', { headers: cartHeaders(sessionId) })
 }
 
 export async function addToCart(variantId: number, quantity: number = 1, sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
   return fetchApi('/api/cart/items', {
     method: 'POST',
     body: { variant_id: variantId, quantity },
-    headers,
+    headers: cartHeaders(sessionId),
   })
 }
 
 export async function updateCartItem(itemId: number, quantity: number, sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
   return fetchApi(`/api/cart/items/${itemId}`, {
     method: 'PUT',
     body: { quantity },
-    headers,
+    headers: cartHeaders(sessionId),
   })
 }
 
 export async function removeFromCart(itemId: number, sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
   return fetchApi(`/api/cart/items/${itemId}`, {
     method: 'DELETE',
-    headers,
+    headers: cartHeaders(sessionId),
   })
 }
 
 export async function clearCart(sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
   return fetchApi('/api/cart', {
     method: 'DELETE',
-    headers,
+    headers: cartHeaders(sessionId),
   })
 }
 
@@ -115,24 +177,34 @@ export async function createCheckoutSession(data: {
   return fetchApi('/api/checkout', {
     method: 'POST',
     body: data,
-    requiresAuth: false,
   })
 }
 
 // Orders
 export async function getOrders() {
-  return fetchApi('/api/orders', { requiresAuth: true })
+  return fetchApi('/api/orders')
 }
 
 export async function getOrder(orderId: number) {
-  return fetchApi(`/api/orders/${orderId}`, { requiresAuth: true })
+  return fetchApi(`/api/orders/${orderId}`)
 }
 
 // Auth
+//
+// These do NOT need credentials: 'include' on the request because
+// credentials: 'include' is set unconditionally in rawFetch. They also
+// do NOT need any special handling on 401 — auto-refresh runs by
+// default, and if /me 401s after a failed refresh that's the correct
+// signal that the user is logged out.
 export async function login(email: string, password: string) {
-  return fetchApi('/api/auth/login', {
+  return fetchApi<{
+    access_token: string
+    refresh_token: string
+    token_type: string
+    expires_in: number
+  }>('/api/auth/login', {
     method: 'POST',
-    body: { username: email, password },
+    body: { email, password },
   })
 }
 
@@ -142,24 +214,68 @@ export async function register(data: {
   first_name: string
   last_name: string
 }) {
-  return fetchApi('/api/auth/register', {
+  return fetchApi<{
+    access_token: string
+    refresh_token: string
+    token_type: string
+    expires_in: number
+  }>('/api/auth/register', {
     method: 'POST',
     body: data,
   })
 }
 
-export async function refreshToken() {
-  return fetchApi('/api/auth/refresh', {
+export async function logout() {
+  return fetchApi<void>('/api/auth/logout', {
     method: 'POST',
+  })
+}
+
+export async function getMe() {
+  return fetchApi<{
+    id: number
+    email: string
+    first_name: string | null
+    last_name: string | null
+    role: 'customer' | 'wholesale' | 'admin'
+    is_active: boolean
+    created_at: string
+  }>('/api/auth/me')
+}
+
+// Wishlist
+export interface WishlistItem {
+  id: number
+  product_id: number
+  name: string
+  slug: string
+  image: string | null
+  min_price: number
+  created_at: string
+}
+
+export async function getWishlist() {
+  return fetchApi<{ items: WishlistItem[] }>('/api/wishlist')
+}
+
+export async function toggleWishlist(productId: number) {
+  return fetchApi<{ product_id: number; saved: boolean }>('/api/wishlist', {
+    method: 'POST',
+    body: { product_id: productId },
+  })
+}
+
+export async function removeFromWishlist(productId: number) {
+  return fetchApi<void>(`/api/wishlist/${productId}`, {
+    method: 'DELETE',
   })
 }
 
 // Chatbot
 export async function sendChatbotMessage(message: string, sessionId?: string) {
-  const headers = sessionId ? { 'X-Session-Id': sessionId } : {}
   return fetchApi('/api/chatbot', {
     method: 'POST',
     body: { message },
-    headers,
+    headers: cartHeaders(sessionId),
   })
 }

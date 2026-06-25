@@ -21,6 +21,12 @@ from app.schemas.order import OrderItemRead, OrderCreate, OrderRead, OrderStatus
 from app.schemas.checkout import CheckoutRequest, CheckoutResponse
 from app.schemas.coupon import CouponCreate, CouponUpdate, CouponRead
 from app.schemas.chatbot import ChatbotMessage, ChatbotResponse
+from app.schemas.wishlist import (
+    WishlistAdd,
+    WishlistItemRead,
+    WishlistRead,
+    WishlistToggleResponse,
+)
 from app.schemas.admin import (
     ImportVariant,
     ImportProduct,
@@ -64,6 +70,10 @@ __all__ = [
     "CouponRead",
     "ChatbotMessage",
     "ChatbotResponse",
+    "WishlistAdd",
+    "WishlistItemRead",
+    "WishlistRead",
+    "WishlistToggleResponse",
     "ImportVariant",
     "ImportProduct",
     "ProductImportRequest",

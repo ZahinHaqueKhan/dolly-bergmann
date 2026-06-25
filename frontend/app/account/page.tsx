@@ -1,62 +1,108 @@
 'use client'
-import { useState } from 'react'
 import Link from 'next/link'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
+import { useCartStore } from '@/store/cart'
+
 export const dynamic = 'force-dynamic'
 
 export default function AccountPage() {
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login')
+  const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const status = useAuthStore((s) => s.status)
+  const hydrate = useAuthStore((s) => s.hydrate)
+  const clearCart = useCartStore((s) => s.clearCart)
+  const cartCount = useCartStore((s) =>
+    s.items.reduce((sum, i) => sum + i.quantity, 0)
+  )
+
+  useEffect(() => {
+    if (status === 'idle') {
+      void hydrate()
+    }
+  }, [status, hydrate])
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/account/login?next=/account')
+    }
+  }, [status, router])
+
+  if (status === 'loading' || status === 'idle' || !user) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        <p className="text-stone-500">Loading...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
-      <div className="max-w-md mx-auto">
-        <div className="flex mb-8 border-b border-stone-200">
-          <button onClick={() => setActiveTab('login')} className={`flex-1 pb-4 text-center font-medium border-b-2 ${activeTab === 'login' ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-500'}`}>
-            Sign In
-          </button>
-          <button onClick={() => setActiveTab('register')} className={`flex-1 pb-4 text-center font-medium border-b-2 ${activeTab === 'register' ? 'border-stone-800 text-stone-800' : 'border-transparent text-stone-500'}`}>
-            Create Account
-          </button>
-        </div>
-
-        {activeTab === 'login' && (
-          <form onSubmit={(e) => { e.preventDefault(); }} className="space-y-4">
-            <input type="email" placeholder="Email" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <input type="password" placeholder="Password" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <button type="submit" className="w-full bg-stone-800 text-white py-3 rounded-full font-medium hover:bg-stone-700">Sign In</button>
-            <p className="text-center text-sm text-stone-500">Forgot your password? <a href="#" className="text-rose-500 hover:underline">Reset it</a></p>
-          </form>
-        )}
-
-        {activeTab === 'register' && (
-          <form onSubmit={(e) => { e.preventDefault(); }} className="space-y-4">
-            <input type="text" placeholder="First Name" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <input type="text" placeholder="Last Name" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <input type="email" placeholder="Email" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <input type="password" placeholder="Password" className="w-full border border-stone-200 rounded-lg px-4 py-3 focus:outline-none focus:border-stone-400" />
-            <button type="submit" className="w-full bg-stone-800 text-white py-3 rounded-full font-medium hover:bg-stone-700">Create Account</button>
-            <p className="text-center text-xs text-stone-400">By creating an account, you agree to our privacy policy and terms.</p>
-          </form>
-        )}
-
-        <div className="my-8 flex items-center gap-4">
-          <div className="flex-1 h-px bg-stone-200" />
-          <p className="text-xs text-stone-400">or continue with</p>
-          <div className="flex-1 h-px bg-stone-200" />
-        </div>
-
-        <button className="w-full border border-stone-200 py-3 rounded-full font-medium text-stone-700 hover:bg-stone-50 flex items-center justify-center gap-2">
-          <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M12.545 10.239v3.821h5.445c-.712 2.315-2.647 3.972-5.445 3.972a6.033 6.033 0 100-12.064 6.033 6.033 0 005.445 3.972z"/></svg>
-          Continue with Google
-        </button>
+      <div className="mb-8">
+        <h1 className="text-3xl font-serif text-stone-800">
+          Welcome, {user.first_name ?? user.email.split('@')[0]}
+        </h1>
+        <p className="text-stone-500 mt-1 text-sm">
+          Signed in as <span className="text-stone-700">{user.email}</span>
+          {user.role !== 'customer' && (
+            <span className="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700 capitalize">
+              {user.role}
+            </span>
+          )}
+        </p>
       </div>
 
-      <div className="mt-16 max-w-md mx-auto">
-        <h2 className="text-xl font-serif text-stone-800 mb-6">Guest Checkout</h2>
-        <p className="text-stone-500 text-sm mb-4">Prefer to check out as a guest? Simply add items to your cart and proceed to checkout — no account required.</p>
-        <Link href="/checkout" className="inline-block bg-stone-100 text-stone-700 px-6 py-3 rounded-full font-medium hover:bg-stone-200">
-          Checkout as Guest
+      <div className="grid md:grid-cols-3 gap-6">
+        <Link
+          href="/account/orders"
+          className="bg-white rounded-xl border border-stone-200 p-6 hover:border-stone-300 transition-colors"
+        >
+          <h2 className="font-serif text-lg text-stone-800 mb-1">Orders</h2>
+          <p className="text-sm text-stone-500">View your order history and tracking.</p>
+        </Link>
+
+        <Link
+          href="/account/wishlist"
+          className="bg-white rounded-xl border border-stone-200 p-6 hover:border-stone-300 transition-colors"
+        >
+          <h2 className="font-serif text-lg text-stone-800 mb-1">Wishlist</h2>
+          <p className="text-sm text-stone-500">Products you saved for later.</p>
+        </Link>
+
+        <Link
+          href="/cart"
+          className="bg-white rounded-xl border border-stone-200 p-6 hover:border-stone-300 transition-colors"
+        >
+          <h2 className="font-serif text-lg text-stone-800 mb-1">Cart</h2>
+          <p className="text-sm text-stone-500">
+            {cartCount === 0
+              ? 'Your cart is empty.'
+              : `${cartCount} item${cartCount === 1 ? '' : 's'} in your cart.`}
+          </p>
         </Link>
       </div>
+
+      <div className="mt-8">
+        <Link
+          href="/shop"
+          className="inline-block bg-stone-800 text-white px-6 py-3 rounded-lg font-medium hover:bg-stone-700 transition-colors"
+        >
+          Continue shopping
+        </Link>
+      </div>
+
+      {process.env.NODE_ENV !== 'production' && cartCount > 0 && (
+        <div className="mt-12 border-t border-stone-200 pt-6">
+          <button
+            onClick={clearCart}
+            className="text-xs text-stone-400 hover:text-stone-600"
+            type="button"
+          >
+            Clear local cart (dev)
+          </button>
+        </div>
+      )}
     </div>
   )
 }

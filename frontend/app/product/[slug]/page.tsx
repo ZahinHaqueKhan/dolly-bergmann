@@ -1,5 +1,7 @@
 import Image from "next/image";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import WishlistHeart from "@/components/WishlistHeart";
 
 interface Variant {
   id: number;
@@ -25,7 +27,7 @@ const MOCK_PRODUCT = {
   ] as Variant[],
 };
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<ReturnType<typeof generateMetadata>> {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { slug } = await params
   return {
@@ -104,9 +106,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <button className="w-full bg-stone-800 text-white py-4 rounded-full font-medium text-lg hover:bg-stone-700 transition-colors mb-4">
               Add to Cart
             </button>
-            <button className="w-full border border-stone-300 text-stone-700 py-4 rounded-full font-medium hover:bg-stone-50 transition-colors">
-              Add to Wishlist
-            </button>
+            <WishlistHeart productId={product.id} />
 
             <div className="mt-8 space-y-4">
               {[
