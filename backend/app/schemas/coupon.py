@@ -33,7 +33,6 @@ class CouponRead(BaseModel):
     usage_limit: int | None
     used_count: int
     created_at: datetime
-    is_valid: bool = True
 
     class Config:
         from_attributes = True

@@ -13,6 +13,7 @@ from app.routers.checkout import router as checkout_router
 from app.routers.webhooks import router as webhooks_router
 from app.routers.chatbot import router as chatbot_router
 from app.routers.admin import router as admin_router
+from app.routers.health import router as health_router
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -78,6 +79,7 @@ app.include_router(checkout_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(health_router)
 
 
 @app.get("/health")
