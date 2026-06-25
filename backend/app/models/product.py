@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,11 @@ class Product(Base):
     meta_title: Mapped[str | None] = mapped_column(String, nullable=True)
     meta_description: Mapped[str | None] = mapped_column(String, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # PLAN 4.3: bulk-action "toggle active/inactive" on the product
+    # list. Default is active. Soft-delete = set is_active=False.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default="true", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

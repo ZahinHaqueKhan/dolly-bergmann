@@ -1,32 +1,45 @@
-import uuid
+"""PLAN 4 admin endpoints.
+
+Layout
+------
+- /api/admin/dashboard   : KPIs + low stock + recent orders
+- /api/admin/products/import/preview   : validate, persist ImportJob
+- /api/admin/products/import/confirm   : execute persisted job
+- /api/admin/import/{job_id}            : poll job status
+- /api/admin/chatbot/unanswered         : errored / refusal-flagged logs
+- /api/admin/chatbot/{log_id}/resolve   : mark as resolved
+"""
+from __future__ import annotations
+
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.service import decode_token
+from app.auth.service import decode_token_dep
 from app.database import get_db
 from app.models.category import Category
+from app.models.chatbot_log import ChatbotLog
+from app.models.import_job import ImportJob
 from app.models.order import Order
 from app.models.product import Product
 from app.models.variant import Variant
 from app.schemas.admin import (
+    CategoryToCreate,
     ImportConfirmRequest,
     ImportJobStatus,
     ImportPreviewResponse,
-    ImportProduct,
     ProductImportRequest,
     RowError,
 )
 from app.schemas.user import TokenData
+from app.services.import_validator import validate_request
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
-import_jobs: dict[str, dict] = {}
 
-
-def get_current_admin_user(token_data: TokenData | None = Depends(decode_token)):
+def get_current_admin_user(token_data: TokenData | None = Depends(decode_token_dep)):
     if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -40,47 +53,51 @@ async def admin_dashboard(
     db: AsyncSession = Depends(get_db),
     current_admin: TokenData = Depends(get_current_admin_user),
 ):
-    total_products_stmt = select(func.count(Product.id))
-    result = await db.execute(total_products_stmt)
-    total_products = result.scalar() or 0
+    total_products = (
+        await db.execute(
+            select(func.count(Product.id)).where(Product.is_active.is_(True))
+        )
+    ).scalar() or 0
+    total_orders = (await db.execute(select(func.count(Order.id)))).scalar() or 0
+    total_revenue = (
+        await db.execute(
+            select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == "paid")
+        )
+    ).scalar() or 0
+    low_stock_count = (
+        await db.execute(
+            select(func.count(Variant.id)).where(Variant.stock < 5)
+        )
+    ).scalar() or 0
 
-    total_orders_stmt = select(func.count(Order.id))
-    result = await db.execute(total_orders_stmt)
-    total_orders = result.scalar() or 0
+    recent_orders_rows = (
+        await db.execute(
+            select(Order).order_by(Order.created_at.desc()).limit(5)
+        )
+    ).scalars().all()
 
-    total_revenue_stmt = select(func.sum(Order.total)).where(Order.status == "paid")
-    result = await db.execute(total_revenue_stmt)
-    total_revenue = result.scalar() or 0
-
-    recent_orders_stmt = (
-        select(Order)
-        .order_by(Order.created_at.desc())
-        .limit(5)
-    )
-    result = await db.execute(recent_orders_stmt)
-    recent_orders = result.scalars().all()
-
-    low_stock_stmt = (
-        select(Variant)
-        .where(Variant.stock < 5)
-        .join(Product)
-        .limit(10)
-    )
-    result = await db.execute(low_stock_stmt)
-    low_stock_variants = result.scalars().all()
+    low_stock_rows = (
+        await db.execute(
+            select(Variant)
+            .where(Variant.stock < 5)
+            .join(Product)
+            .limit(10)
+        )
+    ).scalars().all()
 
     return {
         "total_products": total_products,
         "total_orders": total_orders,
         "total_revenue": total_revenue,
+        "low_stock_count": low_stock_count,
         "recent_orders": [
             {
                 "id": o.id,
                 "status": o.status,
                 "total": o.total,
-                "created_at": o.created_at,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
             }
-            for o in recent_orders
+            for o in recent_orders_rows
         ],
         "low_stock_products": [
             {
@@ -90,10 +107,12 @@ async def admin_dashboard(
                 "color": v.color,
                 "stock": v.stock,
             }
-            for v in low_stock_variants
+            for v in low_stock_rows
         ],
     }
 
+
+# ---- Import: preview (persists the job) ----
 
 @router.post("/products/import/preview", response_model=ImportPreviewResponse)
 async def preview_import(
@@ -101,58 +120,50 @@ async def preview_import(
     db: AsyncSession = Depends(get_db),
     current_admin: TokenData = Depends(get_current_admin_user),
 ):
-    row_errors: list[RowError] = []
-    categories_to_create: dict[str, str] = {}
+    existing_categories = {
+        row.name
+        for row in (await db.execute(select(Category.name))).all()
+    }
+    existing_slugs = {row.slug for row in (await db.execute(select(Product.slug))).all()}
 
-    existing_categories_stmt = select(Category.name, Category.slug)
-    result = await db.execute(existing_categories_stmt)
-    existing_categories = {row.name: row.slug for row in result.all()}
+    row_errors, cats_to_create, would_create, would_update = validate_request(
+        import_data,
+        existing_slugs=existing_slugs,
+        existing_categories=existing_categories,
+    )
 
-    existing_slugs_stmt = select(Product.slug)
-    result = await db.execute(existing_slugs_stmt)
-    existing_slugs = {row.slug for row in result.all()}
-
-    for idx, product_data in enumerate(import_data.products, start=1):
-        if not product_data.name:
-            row_errors.append(RowError(row_number=idx, field="name", message="Name is required"))
-
-        if not product_data.description:
-            row_errors.append(RowError(row_number=idx, field="description", message="Description is required"))
-
-        if not product_data.variants:
-            row_errors.append(RowError(row_number=idx, field="variants", message="At least one variant is required"))
-        else:
-            for var_idx, variant in enumerate(product_data.variants):
-                if not variant.size:
-                    row_errors.append(
-                        RowError(row_number=idx, field=f"variants[{var_idx}].size", message="Size is required")
-                    )
-                if not variant.color:
-                    row_errors.append(
-                        RowError(row_number=idx, field=f"variants[{var_idx}].color", message="Color is required")
-                    )
-                if variant.price <= 0:
-                    row_errors.append(
-                        RowError(row_number=idx, field=f"variants[{var_idx}].price", message="Price must be > 0")
-                    )
-
-        slug = product_data.slug or product_data.name.lower().replace(" ", "-")
-        if slug in existing_slugs:
-            row_errors.append(RowError(row_number=idx, field="slug", message=f"Slug '{slug}' already exists"))
-
-        category_name = product_data.category
-        if category_name not in existing_categories:
-            category_slug = category_name.lower().replace(" ", "-")
-            categories_to_create[category_name] = category_slug
+    job = ImportJob(
+        status="pending",
+        schema_version=import_data.schema_version,
+        payload=import_data.model_dump(),
+        total_products=len(import_data.products),
+        would_create=would_create,
+        would_update=would_update,
+        categories_to_create=[
+            {"name": n, "slug": s} for n, s in cats_to_create.items()
+        ],
+        row_errors=[e.model_dump() for e in row_errors],
+        admin_user_id=current_admin.user_id,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
 
     return ImportPreviewResponse(
-        total_products=len(import_data.products),
+        job_id=job.id,
+        status=job.status,
+        schema_version=job.schema_version,
+        total_products=job.total_products,
+        would_create=job.would_create,
+        would_update=job.would_update,
         categories_to_create=[
-            {"name": name, "slug": slug} for name, slug in categories_to_create.items()
+            CategoryToCreate(name=n, slug=s) for n, s in cats_to_create.items()
         ],
         row_errors=row_errors,
     )
 
+
+# ---- Import: confirm (executes the persisted job) ----
 
 @router.post("/products/import/confirm", response_model=ImportJobStatus)
 async def confirm_import(
@@ -160,93 +171,242 @@ async def confirm_import(
     db: AsyncSession = Depends(get_db),
     current_admin: TokenData = Depends(get_current_admin_user),
 ):
-    job = import_jobs.get(confirm_data.job_id)
+    job = (await db.execute(select(ImportJob).where(ImportJob.id == confirm_data.job_id))).scalar_one_or_none()
     if job is None:
         raise HTTPException(status_code=404, detail="Import job not found")
+    if job.admin_user_id != current_admin.user_id:
+        raise HTTPException(status_code=403, detail="Not your import job")
+    if job.status != "pending":
+        raise HTTPException(
+            status_code=400, detail=f"Import job is {job.status!r}, cannot confirm"
+        )
+    if job.row_errors:
+        # Refuse to import anything if the preview surfaced errors. The
+        # admin must fix the file and re-upload.
+        raise HTTPException(
+            status_code=400,
+            detail="Import job has validation errors; fix and re-upload",
+        )
 
-    if job["status"] != "pending":
-        raise HTTPException(status_code=400, detail=f"Import job is {job['status']}")
-
-    job["status"] = "processing"
+    job.status = "processing"
+    await db.commit()
 
     try:
-        import_data = ProductImportRequest(**job["data"])
-        imported_count = 0
-        errors: list[str] = []
-
-        existing_categories_stmt = select(Category.name, Category.id)
-        result = await db.execute(existing_categories_stmt)
-        category_map = {row.name: row.id for row in result.all()}
-
-        for product_data in import_data.products:
-            try:
-                category_name = product_data.category
-                if category_name not in category_map:
-                    category_slug = category_name.lower().replace(" ", "-")
-                    category = Category(name=category_name, slug=category_slug)
-                    db.add(category)
-                    await db.flush()
-                    category_map[category_name] = category.id
-
-                slug = product_data.slug or product_data.name.lower().replace(" ", "-")
-                product = Product(
-                    name=product_data.name,
-                    slug=slug,
-                    description=product_data.description,
-                    category_id=category_map[category_name],
-                    tags=product_data.tags,
-                )
-                db.add(product)
-                await db.flush()
-
-                for variant_data in product_data.variants:
-                    sku = variant_data.sku or f"{slug}-{variant_data.size}-{variant_data.color}"
-                    variant = Variant(
-                        product_id=product.id,
-                        size=variant_data.size,
-                        color=variant_data.color,
-                        price=variant_data.price,
-                        stock=variant_data.stock,
-                        sku=sku,
-                        images=variant_data.images,
-                    )
-                    db.add(variant)
-
-                imported_count += 1
-            except Exception as e:
-                errors.append(f"Product '{product_data.name}': {str(e)}")
-
+        request = ProductImportRequest(**job.payload)
+    except Exception as e:
+        job.status = "failed"
+        job.import_errors = [{"phase": "decode", "error": str(e)}]
+        job.completed_at = datetime.utcnow()
         await db.commit()
+        return _job_to_status(job)
 
-        job["status"] = "completed"
-        job["imported_count"] = imported_count
-        job["errors"] = errors
-
+    try:
+        imported, import_errors = await _execute_import(db, request)
+        job.imported_count = imported
+        job.import_errors = import_errors
+        if import_errors:
+            job.status = "completed_with_errors"
+        else:
+            job.status = "completed"
     except Exception as e:
         await db.rollback()
-        job["status"] = "failed"
-        job["errors"] = [str(e)]
+        job.status = "failed"
+        job.import_errors = [{"phase": "import", "error": str(e)}]
 
-    return ImportJobStatus(
-        job_id=confirm_data.job_id,
-        status=job["status"],
-        imported_count=job.get("imported_count", 0),
-        errors=job.get("errors", []),
-    )
+    job.completed_at = datetime.utcnow()
+    await db.commit()
+    return _job_to_status(job)
+
+
+async def _execute_import(db: AsyncSession, request: ProductImportRequest) -> int:
+    """Actually create categories, products, and variants.
+
+    Idempotency: a slug that already exists is SKIPPED (not overwritten)
+    so re-running confirm is safe. The import_errors list captures
+    skipped slugs so the admin sees what happened.
+    """
+    existing_categories = {
+        row.name: row.id
+        for row in (await db.execute(select(Category.name, Category.id))).all()
+    }
+    existing_slugs = {
+        row.slug
+        for row in (await db.execute(select(Product.slug))).all()
+    }
+    existing_skus = {
+        row.sku
+        for row in (await db.execute(select(Variant.sku))).all()
+    }
+
+    imported = 0
+    import_errors: list[dict] = []
+
+    for product_data in request.products:
+        slug = product_data.slug or (product_data.name or "").lower().replace(" ", "-")
+        if slug in existing_slugs:
+            import_errors.append(
+                {"phase": "import", "slug": slug, "error": "slug already exists; skipped"}
+            )
+            continue
+
+        category_name = product_data.category
+        if category_name not in existing_categories:
+            category = Category(
+                name=category_name,
+                slug=category_name.lower().replace(" ", "-"),
+            )
+            db.add(category)
+            await db.flush()
+            existing_categories[category_name] = category.id
+
+        try:
+            product = Product(
+                name=product_data.name,
+                slug=slug,
+                description=product_data.description,
+                category_id=existing_categories[category_name],
+                images=product_data.images,
+                tags=product_data.tags,
+                is_active=True,
+            )
+            db.add(product)
+            await db.flush()
+        except Exception as e:
+            import_errors.append(
+                {"phase": "import", "slug": slug, "error": f"product create: {e}"}
+            )
+            continue
+
+        for var_idx, variant_data in enumerate(product_data.variants):
+            sku = variant_data.sku or f"{slug}-{variant_data.size}-{variant_data.color}"
+            if sku in existing_skus:
+                # Disambiguate by appending a counter so the unique
+                # constraint doesn't fail. The admin can rename later.
+                base = sku
+                n = 2
+                while sku in existing_skus:
+                    sku = f"{base}-{n}"
+                    n += 1
+            existing_skus.add(sku)
+            variant = Variant(
+                product_id=product.id,
+                size=variant_data.size,
+                color=variant_data.color,
+                price=variant_data.price,
+                stock=variant_data.stock,
+                sku=sku,
+                images=variant_data.images,
+            )
+            db.add(variant)
+
+        existing_slugs.add(slug)
+        imported += 1
+
+    await db.commit()
+
+    return imported, import_errors
 
 
 @router.get("/import/{job_id}", response_model=ImportJobStatus)
 async def get_import_status(
     job_id: str,
+    db: AsyncSession = Depends(get_db),
     current_admin: TokenData = Depends(get_current_admin_user),
 ):
-    job = import_jobs.get(job_id)
+    job = (await db.execute(select(ImportJob).where(ImportJob.id == job_id))).scalar_one_or_none()
     if job is None:
         raise HTTPException(status_code=404, detail="Import job not found")
+    if job.admin_user_id != current_admin.user_id:
+        raise HTTPException(status_code=403, detail="Not your import job")
+    return _job_to_status(job)
 
+
+def _job_to_status(job: ImportJob) -> ImportJobStatus:
     return ImportJobStatus(
-        job_id=job_id,
-        status=job["status"],
-        imported_count=job.get("imported_count", 0),
-        errors=job.get("errors", []),
+        job_id=job.id,
+        status=job.status,
+        schema_version=job.schema_version,
+        total_products=job.total_products,
+        imported_count=job.imported_count,
+        would_create=job.would_create,
+        would_update=job.would_update,
+        categories_to_create=[
+            CategoryToCreate(**c) for c in job.categories_to_create
+        ],
+        row_errors=[RowError(**e) for e in job.row_errors],
+        import_errors=[str(e.get("error", e)) for e in job.import_errors],
+        created_at=job.created_at,
+        completed_at=job.completed_at,
     )
+
+
+# ---- Chatbot admin (PLAN 4.7) ----
+
+_REFUSAL_KEYWORDS = (
+    "i can't help",
+    "i cannot help",
+    "i'm not able to",
+    "i am not able to",
+    "i don't have access",
+    "outside the scope",
+    "i'm sorry, i cannot",
+)
+
+
+@router.get("/chatbot/unanswered", response_model=dict)
+async def chatbot_unanswered(
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Logs that need admin attention: errored OR refusal-flagged.
+
+    A log is "refusal-flagged" if its response contains a known refusal
+    phrase (PLAN §4.7 + the saia-chatbot-prompt skill).
+    """
+    refusal_pattern = "|".join(_REFUSAL_KEYWORDS)
+    stmt = (
+        select(ChatbotLog)
+        .where(
+            or_(
+                ChatbotLog.error.isnot(None),
+                ChatbotLog.response.ilike(f"%{refusal_pattern}%"),
+            )
+        )
+        .order_by(ChatbotLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    items = [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "session_id": r.session_id,
+            "question": r.question,
+            "response": r.response,
+            "error": r.error,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "limit": limit, "offset": offset}
+
+
+@router.post("/chatbot/{log_id}/resolve", response_model=dict)
+async def chatbot_resolve(
+    log_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+):
+    log = (
+        await db.execute(select(ChatbotLog).where(ChatbotLog.id == log_id))
+    ).scalar_one_or_none()
+    if log is None:
+        raise HTTPException(status_code=404, detail="Chatbot log not found")
+    log.resolved_at = datetime.utcnow()
+    log.resolved_by_id = current_admin.user_id
+    await db.commit()
+    return {"id": log.id, "resolved_at": log.resolved_at.isoformat()}

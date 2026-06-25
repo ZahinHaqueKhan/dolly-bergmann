@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.service import decode_token
+from app.auth.service import decode_token_dep
 from app.database import get_db
 from app.models.category import Category
 from app.schemas.user import TokenData
@@ -12,7 +12,7 @@ from app.schemas.user import TokenData
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-def get_current_admin_user(token_data: Annotated[TokenData | None, Depends(decode_token)]):
+def get_current_admin_user(token_data: Annotated[TokenData | None, Depends(decode_token_dep)]):
     if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

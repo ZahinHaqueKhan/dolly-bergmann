@@ -13,8 +13,10 @@ from app.routers.checkout import router as checkout_router
 from app.routers.webhooks import router as webhooks_router
 from app.routers.chatbot import router as chatbot_router
 from app.routers.admin import router as admin_router
+from app.routers.admin_coupons import router as admin_coupons_router
 from app.routers.health import router as health_router
 from app.routers.wishlist import router as wishlist_router
+from app.routers.uploads import router as uploads_router, mount_uploads
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -80,8 +82,12 @@ app.include_router(checkout_router, prefix="/api")
 app.include_router(webhooks_router, prefix="/api")
 app.include_router(chatbot_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(admin_coupons_router, prefix="/api")
+app.include_router(uploads_router, prefix="/api")
 app.include_router(wishlist_router)
 app.include_router(health_router)
+
+mount_uploads(app)
 
 
 @app.get("/health")

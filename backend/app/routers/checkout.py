@@ -129,16 +129,19 @@ async def create_checkout_session(
     # Local pricing
     subtotal_cents = sum(variants[c.variant_id].price * c.quantity for c in cart_items)
     discount_cents = 0
+    coupon_free_shipping = False
     applied_coupon: Coupon | None = None
     if body.coupon_code:
-        applied_coupon, discount_cents = await _apply_coupon(
+        applied_coupon, discount_cents, coupon_free_shipping = await _apply_coupon(
             db, body.coupon_code, subtotal_cents
         )
 
-    # Shipping (PLAN 3.3): $0 over $100 subtotal, else $7.
-    shipping_cents = (
-        0 if subtotal_cents >= FREE_SHIPPING_THRESHOLD_CENTS else FLAT_SHIPPING_CENTS
-    )
+    # Shipping (PLAN 3.3): $0 over $100 subtotal, else $7. A
+    # `free_shipping` coupon overrides the threshold check.
+    if coupon_free_shipping or subtotal_cents >= FREE_SHIPPING_THRESHOLD_CENTS:
+        shipping_cents = 0
+    else:
+        shipping_cents = FLAT_SHIPPING_CENTS
     total_cents = max(0, subtotal_cents - discount_cents) + shipping_cents
 
     # Build Stripe line_items
@@ -284,12 +287,20 @@ async def _load_cart(
 
 async def _apply_coupon(
     db: AsyncSession, code: str, subtotal_cents: int
-) -> tuple[Coupon | None, int]:
+) -> tuple[Coupon | None, int, bool]:
+    """Apply a coupon locally and return (coupon, discount_cents, free_shipping).
+
+    PLAN 4.6: respects starts_at/ends_at, is_active, usage_limit. The
+    `free_shipping` flag is returned so the caller can zero out shipping
+    even when the subtotal is below the free-shipping threshold.
+    """
     coupon = (
         await db.execute(select(Coupon).where(Coupon.code == code))
     ).scalar_one_or_none()
     if coupon is None:
         raise HTTPException(status_code=400, detail="Invalid coupon code")
+    if not coupon.is_active:
+        raise HTTPException(status_code=400, detail="Coupon is not active")
     if coupon.usage_limit is not None and coupon.used_count >= coupon.usage_limit:
         raise HTTPException(status_code=400, detail="Coupon usage limit reached")
     if subtotal_cents < coupon.min_order_value:
@@ -298,21 +309,27 @@ async def _apply_coupon(
             detail=f"Minimum order ${coupon.min_order_value / 100:.2f} for this coupon",
         )
     now = datetime.utcnow()
-    if now < coupon.valid_from:
+    if coupon.starts_at and now < coupon.starts_at:
         raise HTTPException(status_code=400, detail="Coupon is not yet valid")
-    if coupon.valid_until is not None and now > coupon.valid_until:
+    if coupon.ends_at is not None and now > coupon.ends_at:
         raise HTTPException(status_code=400, detail="Coupon has expired")
-    if coupon.discount_type == "percent":
-        # Coupon.discount_value is an integer percent (0-100).
+    # Back-compat: a "fixed" coupon created before the rename still
+    # works. "fixed_amount" is the canonical name in PLAN 4.6.
+    if coupon.discount_type in ("percent",):
         discount = (subtotal_cents * coupon.discount_value) // 100
-    elif coupon.discount_type == "fixed":
+        free_shipping = False
+    elif coupon.discount_type in ("fixed", "fixed_amount"):
         discount = min(coupon.discount_value, subtotal_cents)
+        free_shipping = False
+    elif coupon.discount_type == "free_shipping":
+        discount = 0
+        free_shipping = True
     else:
         raise HTTPException(
             status_code=500,
             detail=f"Unknown coupon discount_type: {coupon.discount_type!r}",
         )
-    return coupon, discount
+    return coupon, discount, free_shipping
 
 
 def _cart_signature(

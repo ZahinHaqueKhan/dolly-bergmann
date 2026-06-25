@@ -15,8 +15,15 @@ class ChatbotLog(Base):
     question: Mapped[str] = mapped_column(Text, nullable=False)
     response: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # PLAN 4.7: admin marks log entries resolved after review. NULL
+    # means not yet reviewed.
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    user = relationship("User")
+    user = relationship("User", foreign_keys=[user_id])
+    resolved_by = relationship("User", foreign_keys=[resolved_by_id])

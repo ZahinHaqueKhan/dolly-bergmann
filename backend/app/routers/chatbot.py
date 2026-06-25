@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.service import decode_token
+from app.auth.service import decode_token_dep
 from app.config import settings
 from app.database import get_db
 from app.models.chatbot_log import ChatbotLog
@@ -70,7 +70,7 @@ async def chatbot_message(
     request: Request,
     db: AsyncSession = Depends(get_db),
     x_session_id: Optional[str] = Header(None),
-    token_data=Depends(decode_token),
+    token_data=Depends(decode_token_dep),
 ):
     client_ip = request.client.host if request.client else "unknown"
 

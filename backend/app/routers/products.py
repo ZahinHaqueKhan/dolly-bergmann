@@ -5,7 +5,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.service import decode_token
+from app.auth.service import decode_token_dep
 from app.database import get_db
 from app.models.category import Category
 from app.models.product import Product
@@ -15,7 +15,7 @@ from app.schemas.user import TokenData
 router = APIRouter(prefix="/products", tags=["products"])
 
 
-def get_current_admin_user(token_data: Annotated[TokenData | None, Depends(decode_token)]):
+def get_current_admin_user(token_data: Annotated[TokenData | None, Depends(decode_token_dep)]):
     if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -35,9 +35,16 @@ async def list_products(
     search: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    include_inactive: bool = Query(False),
+    current_admin: TokenData | None = Depends(decode_token_dep),
 ):
+    """Public catalog. Admins may pass `include_inactive=1` to see
+    soft-deleted products (used by the admin products page)."""
     offset = (page - 1) * page_size
     stmt = select(Product).options(selectinload(Product.variants))
+    is_admin = current_admin is not None and current_admin.role == "admin"
+    if not (include_inactive and is_admin):
+        stmt = stmt.where(Product.is_active.is_(True))
 
     if category:
         stmt = stmt.join(Category).where(Category.slug == category)
@@ -79,6 +86,7 @@ async def list_products(
             "meta_title": p.meta_title,
             "meta_description": p.meta_description,
             "tags": p.tags,
+            "is_active": p.is_active,
             "created_at": p.created_at,
             "updated_at": p.updated_at,
             "variants": [
@@ -99,7 +107,11 @@ async def list_products(
 
 @router.get("/{slug}", response_model=dict)
 async def get_product(slug: str, db: AsyncSession = Depends(get_db)):
-    stmt = select(Product).options(selectinload(Product.variants)).where(Product.slug == slug)
+    stmt = (
+        select(Product)
+        .options(selectinload(Product.variants))
+        .where(Product.slug == slug, Product.is_active.is_(True))
+    )
     result = await db.execute(stmt)
     product = result.scalar_one_or_none()
 

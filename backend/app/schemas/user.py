@@ -53,7 +53,10 @@ class UserRead(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Use plain str rather than EmailStr so test/dev mailboxes like
+    # `admin@modestwear.test` (RFC 6761 reserved TLD) are accepted at
+    # the wire. We still normalize (lower) before querying the DB.
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=128)
 
 

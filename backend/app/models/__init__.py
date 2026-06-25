@@ -12,6 +12,7 @@ from app.models.wishlist_item import WishlistItem
 from app.models.audit_log import AuditLog
 from app.models.chatbot_log import ChatbotLog
 from app.models.refresh_token import RefreshToken
+from app.models.import_job import ImportJob
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "AuditLog",
     "ChatbotLog",
     "RefreshToken",
+    "ImportJob",
 ]

@@ -5,6 +5,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
+from fastapi import Request
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from jose import JWTError, jwt
@@ -121,3 +122,26 @@ def decode_token(token: str, expected_type: str | None = None) -> TokenData | No
         return None
 
     return TokenData(user_id=user_id, role=role, token_type=token_type)
+
+
+async def decode_token_dep(
+    request: Request,
+    expected_type: str | None = None,
+) -> TokenData | None:
+    """FastAPI dependency that resolves the access token from a Bearer
+    header or the `access_token` httpOnly cookie, then validates it.
+
+    Routers that need the current user/admin role should depend on
+    THIS function, not on `decode_token` directly — depending on
+    `decode_token` directly causes FastAPI to auto-bind `token: str`
+    as a required query param, which 422s every request.
+    """
+    auth = request.headers.get("authorization") or ""
+    token: str | None = None
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip() or None
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        return None
+    return decode_token(token, expected_type=expected_type)
