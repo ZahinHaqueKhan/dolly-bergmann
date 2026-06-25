@@ -157,6 +157,139 @@ async def get_order_by_stripe_session(
     }
 
 
+@router.get("/admin", response_model=list[dict])
+async def admin_list_orders(
+    db: AsyncSession = Depends(get_db),
+    status_filter: str | None = None,
+    search: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 100,
+    token_data: TokenData | None = Depends(_decode_optional_token),
+):
+    """PLAN 4.5: admin order list with status / search / date filters.
+
+    Search matches against order id, user email, and customer_details.email
+    embedded in shipping_address. Date range is inclusive on created_at.
+
+    NOTE: this route is registered BEFORE the /{order_id} catch-all below
+    so `/api/orders/admin` doesn't get parsed as order_id="admin".
+    """
+    if token_data is None or token_data.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    from datetime import datetime as _dt
+    from sqlalchemy import or_ as _or
+    from app.models.user import User as _User
+
+    stmt = (
+        select(Order, _User.email)
+        .outerjoin(_User, _User.id == Order.user_id)
+        .order_by(Order.created_at.desc())
+    )
+    if status_filter:
+        stmt = stmt.where(Order.status == status_filter)
+    if search:
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(
+            _or(
+                Order.id.cast(__import__("sqlalchemy").String).ilike(like),
+                _User.email.ilike(like),
+                Order.shipping_address["email"].astext.ilike(like),
+            )
+        )
+    if date_from:
+        try:
+            df = _dt.fromisoformat(date_from)
+            stmt = stmt.where(Order.created_at >= df)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_from must be ISO date")
+    if date_to:
+        try:
+            dt = _dt.fromisoformat(date_to)
+            stmt = stmt.where(Order.created_at <= dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_to must be ISO date")
+    stmt = stmt.limit(max(1, min(limit, 500)))
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        {
+            "id": o.id,
+            "user_id": o.user_id,
+            "user_email": email,
+            "status": o.status,
+            "total": o.total,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        for o, email in rows
+    ]
+
+
+@router.get("/admin/{order_id}", response_model=dict)
+async def admin_get_order(
+    order_id: int,
+    db: AsyncSession = Depends(get_db),
+    token_data: TokenData | None = Depends(_decode_optional_token),
+):
+    """Admin view of a single order: full shipping address, line items,
+    payment intent / session ids, and the buyer's email (if known).
+    """
+    if token_data is None or token_data.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    from app.models.user import User as _User
+
+    stmt = (
+        select(Order, _User.email)
+        .outerjoin(_User, _User.id == Order.user_id)
+        .where(Order.id == order_id)
+        .options(
+            selectinload(Order.order_items)
+            .selectinload(OrderItem.variant)
+            .selectinload(Variant.product)
+        )
+    )
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    o, email = row
+
+    return {
+        "id": o.id,
+        "user_id": o.user_id,
+        "user_email": email,
+        "status": o.status,
+        "total": o.total,
+        "shipping_address": o.shipping_address,
+        "stripe_session_id": o.stripe_session_id,
+        "stripe_payment_intent_id": o.stripe_payment_intent_id,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+        "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+        "items": [
+            {
+                "id": item.id,
+                "variant_id": item.variant_id,
+                "product_name": item.variant.product.name,
+                "size": item.variant.size,
+                "color": item.variant.color,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "subtotal": item.quantity * item.unit_price,
+            }
+            for item in o.order_items
+        ],
+    }
+
+
 @router.get("/{order_id}", response_model=dict)
 async def get_order(
     order_id: int,
@@ -279,37 +412,6 @@ async def create_order(
     await db.refresh(order)
 
     return {"id": order.id, "status": order.status, "total": order.total}
-
-
-@router.get("/admin", response_model=list[dict])
-async def admin_list_orders(
-    db: AsyncSession = Depends(get_db),
-    status_filter: str | None = None,
-    token_data: TokenData | None = Depends(_decode_optional_token),
-):
-    if token_data is None or token_data.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-
-    stmt = select(Order).order_by(Order.created_at.desc())
-    if status_filter:
-        stmt = stmt.where(Order.status == status_filter)
-
-    result = await db.execute(stmt)
-    orders = result.scalars().all()
-
-    return [
-        {
-            "id": o.id,
-            "user_id": o.user_id,
-            "status": o.status,
-            "total": o.total,
-            "created_at": o.created_at,
-        }
-        for o in orders
-    ]
 
 
 @router.put("/admin/{order_id}/status", response_model=dict)
