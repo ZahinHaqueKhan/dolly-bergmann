@@ -87,8 +87,8 @@ async def _get_or_create_admin(session: AsyncSession) -> tuple[User, bool]:
     )
     existing = result.scalar_one_or_none()
     if existing is not None:
-        if not existing.is_admin:
-            existing.is_admin = True
+        if existing.role != "admin":
+            existing.role = "admin"
             await session.flush()
             return existing, True
         return existing, False
@@ -98,7 +98,7 @@ async def _get_or_create_admin(session: AsyncSession) -> tuple[User, bool]:
         password_hash=_hash_password(admin_password),
         first_name="Admin",
         last_name="ModestWear",
-        is_admin=True,
+        role="admin",
     )
     session.add(user)
     await session.flush()

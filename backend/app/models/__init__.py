@@ -11,6 +11,7 @@ from app.models.cart_item import CartItem
 from app.models.wishlist_item import WishlistItem
 from app.models.audit_log import AuditLog
 from app.models.chatbot_log import ChatbotLog
+from app.models.refresh_token import RefreshToken
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "WishlistItem",
     "AuditLog",
     "ChatbotLog",
+    "RefreshToken",
 ]

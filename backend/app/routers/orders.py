@@ -179,7 +179,7 @@ async def admin_list_orders(
     status_filter: str | None = None,
     token_data: Annotated[TokenData | None, Depends(decode_token)] = None,
 ):
-    if token_data is None or not token_data.is_admin:
+    if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -211,7 +211,7 @@ async def admin_update_order_status(
     db: AsyncSession = Depends(get_db),
     token_data: Annotated[TokenData | None, Depends(decode_token)] = None,
 ):
-    if token_data is None or not token_data.is_admin:
+    if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",

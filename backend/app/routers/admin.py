@@ -27,7 +27,7 @@ import_jobs: dict[str, dict] = {}
 
 
 def get_current_admin_user(token_data: TokenData | None = Depends(decode_token)):
-    if token_data is None or not token_data.is_admin:
+    if token_data is None or token_data.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
