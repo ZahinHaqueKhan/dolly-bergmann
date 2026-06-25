@@ -32,6 +32,10 @@ async function fetchProducts(): Promise<ShopProduct[]> {
     return data.map((p) => {
       const prices = p.variants.map((v) => v.price).filter((n) => typeof n === 'number')
       const minPriceCents = prices.length ? Math.min(...prices) : 0
+      // Pick the first variant with stock > 0 as the "default" variant
+      // the ProductCard can add to cart in one click. If none are in
+      // stock, the card will not show the quick-add button.
+      const firstAvailable = p.variants.find((v) => v.stock > 0) ?? p.variants[0]
       return {
         id: p.id,
         name: p.name,
@@ -39,6 +43,15 @@ async function fetchProducts(): Promise<ShopProduct[]> {
         price: minPriceCents / 100,
         images: p.images,
         variantCount: p.variants.length,
+        firstVariant: firstAvailable
+          ? {
+              id: firstAvailable.id,
+              size: firstAvailable.size,
+              color: firstAvailable.color,
+              price: firstAvailable.price,
+              stock: firstAvailable.stock,
+            }
+          : null,
       }
     })
   } catch {

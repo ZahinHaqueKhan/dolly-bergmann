@@ -2,6 +2,7 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import WishlistHeart from "@/components/WishlistHeart";
+import AddToCartButton from "@/components/AddToCartButton";
 
 interface Variant {
   id: number;
@@ -87,25 +88,21 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
             <div className="mb-6">
               <p className="font-medium text-stone-700 mb-2">Size</p>
-              <div className="flex gap-2">
-                {['S/M', 'M/L', 'L/XL'].map(size => (
-                  <button key={size} className="px-4 py-2 border border-stone-300 rounded-lg text-sm hover:border-stone-500 transition-colors">{size}</button>
+              <div className="flex gap-2 flex-wrap">
+                {product.variants.map(v => (
+                  <button
+                    key={`${v.size}-${v.color}`}
+                    className="px-4 py-2 border border-stone-300 rounded-lg text-sm hover:border-stone-500 transition-colors"
+                    disabled={v.stock <= 0}
+                  >
+                    {v.size} <span className="text-stone-500">/ {v.color}</span>
+                    {v.stock <= 0 && <span className="text-stone-400 text-xs ml-1">(out of stock)</span>}
+                  </button>
                 ))}
               </div>
             </div>
 
-            <div className="mb-6">
-              <p className="font-medium text-stone-700 mb-2">Color</p>
-              <div className="flex gap-2">
-                {['Black', 'Navy', 'Burgundy'].map(color => (
-                  <button key={color} className="px-4 py-2 border border-stone-300 rounded-lg text-sm capitalize hover:border-stone-500 transition-colors">{color}</button>
-                ))}
-              </div>
-            </div>
-
-            <button className="w-full bg-stone-800 text-white py-4 rounded-full font-medium text-lg hover:bg-stone-700 transition-colors mb-4">
-              Add to Cart
-            </button>
+            <AddToCartButton variants={product.variants} />
             <WishlistHeart productId={product.id} />
 
             <div className="mt-8 space-y-4">

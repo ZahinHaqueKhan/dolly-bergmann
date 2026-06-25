@@ -12,7 +12,7 @@ export default function AccountPage() {
   const user = useAuthStore((s) => s.user)
   const status = useAuthStore((s) => s.status)
   const hydrate = useAuthStore((s) => s.hydrate)
-  const clearCart = useCartStore((s) => s.clearCart)
+  const clearCart = useCartStore((s) => s.clear)
   const cartCount = useCartStore((s) =>
     s.items.reduce((sum, i) => sum + i.quantity, 0)
   )

@@ -10,6 +10,13 @@ export interface ShopProduct {
   price: number
   images: string[]
   variantCount?: number
+  firstVariant?: {
+    id: number
+    size: string
+    color: string
+    price: number
+    stock: number
+  } | null
 }
 
 const STATIC_CATEGORIES = ['dresses', 'khimar', 'abaya', 'sets']

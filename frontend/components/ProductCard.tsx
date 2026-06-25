@@ -1,12 +1,22 @@
 'use client'
+
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import toast from 'react-hot-toast'
+
 import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { useWishlistStore } from '@/store/wishlist'
+
+interface FirstVariant {
+  id: number
+  size: string
+  color: string
+  price: number
+  stock: number
+}
 
 interface Product {
   id: number
@@ -15,10 +25,11 @@ interface Product {
   price: number
   images: string[]
   category?: string
+  firstVariant?: FirstVariant | null
 }
 
 export default function ProductCard({ product }: { product: Product }) {
-  const addItem = useCartStore((s) => s.addItem)
+  const addToCart = useCartStore((s) => s.add)
   const saved = useWishlistStore((s) => s.isSaved(product.id))
   const toggle = useWishlistStore((s) => s.toggle)
   const hydrateWishlist = useWishlistStore((s) => s.hydrate)
@@ -28,26 +39,30 @@ export default function ProductCard({ product }: { product: Product }) {
   const router = useRouter()
 
   useEffect(() => {
-    // Hydrate the wishlist once per session for logged-in users so the
-    // heart icons on every card can render the correct filled/empty
-    // state without a per-card fetch.
     if (authStatus === 'authenticated' && wishlistStatus === 'idle') {
       void hydrateWishlist()
     }
   }, [authStatus, wishlistStatus, hydrateWishlist])
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault()
-    addItem({
-      variant_id: product.id,
-      product_name: product.name,
-      size: '',
-      color: '',
-      price: product.price,
-      quantity: 1,
-      image: product.images[0] || '',
-    })
-    toast.success('Added to cart')
+    e.stopPropagation()
+    const v = product.firstVariant
+    if (!v) {
+      // No variant selected yet — go to the product page.
+      router.push(`/product/${product.slug}`)
+      return
+    }
+    if (v.stock <= 0) {
+      toast.error('Out of stock')
+      return
+    }
+    try {
+      await addToCart(v.id, 1)
+      toast.success('Added to cart')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not add to cart')
+    }
   }
 
   const handleToggleWishlist = async (e: React.MouseEvent) => {
@@ -65,6 +80,8 @@ export default function ProductCard({ product }: { product: Product }) {
       toast.error(message)
     }
   }
+
+  const canQuickAdd = !!product.firstVariant && product.firstVariant.stock > 0
 
   return (
     <Link href={`/product/${product.slug}`} className="group block">
@@ -104,28 +121,33 @@ export default function ProductCard({ product }: { product: Product }) {
           </svg>
         </button>
 
-        <button
-          onClick={handleAddToCart}
-          className="absolute bottom-3 right-3 bg-white/90 backdrop-blur p-2 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white"
-          aria-label="Add to cart"
-        >
-          <svg
-            className="w-5 h-5 text-stone-700"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {canQuickAdd && (
+          <button
+            onClick={handleAddToCart}
+            className="absolute bottom-3 right-3 bg-white/90 backdrop-blur p-2 rounded-full shadow opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white"
+            aria-label="Add to cart"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-        </button>
+            <svg
+              className="w-5 h-5 text-stone-700"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+          </button>
+        )}
       </div>
       <h3 className="text-stone-800 font-medium text-sm">{product.name}</h3>
-      <p className="text-stone-600 text-sm">${product.price}</p>
+      <p className="text-stone-600 text-sm">${product.price.toFixed(2)}</p>
+      {!canQuickAdd && product.firstVariant && (
+        <p className="text-xs text-stone-400">Out of stock</p>
+      )}
     </Link>
   )
 }
