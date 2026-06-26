@@ -166,7 +166,10 @@ HTTP_CODE="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$API$UPLOAD_U
 [ "$HTTP_CODE" = "200" ] || fail "uploaded image not served at $UPLOAD_URL (got $HTTP_CODE)"
 ok "uploaded image is served at $UPLOAD_URL (200)"
 
-# Non-admin cannot upload
+# Non-admin cannot upload. We create the customer once and reuse the
+# cookies file for both the upload check and the final /api/admin
+# authorization check. This avoids burning 2 of the 5-per-5min
+# register rate-limit slots.
 NONADMIN="$(mktemp)"
 curl -fsS --max-time 5 -X POST "$API/api/auth/register" \
   -H "Content-Type: application/json" -c "$NONADMIN" \
@@ -176,7 +179,6 @@ UNAUTH_CODE="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' -X POST "$AP
   -b "$NONADMIN")"
 [ "$UNAUTH_CODE" = "403" ] || fail "non-admin upload expected 403, got $UNAUTH_CODE"
 ok "non-admin upload is blocked (403)"
-rm -f "$NONADMIN"
 
 section "Admin: JSON import (PLAN 4.4)"
 
@@ -449,11 +451,8 @@ NEW_RESOLVED_AT="$($PSQL -c "SELECT resolved_at FROM chatbot_logs WHERE id=$TARG
 [ -n "$NEW_RESOLVED_AT" ] || fail "resolve didn't set resolved_at"
 ok "marked log id=$TARGET_ID as resolved"
 
-# Anon/non-admin can't reach the admin endpoints
-NONADMIN="$(mktemp)"
-curl -fsS --max-time 5 -X POST "$API/api/auth/register" \
-  -H "Content-Type: application/json" -c "$NONADMIN" \
-  -d "{\"email\":\"phase4-customer2-$TS@modestwear.test\",\"password\":\"Phase4User!\",\"first_name\":\"P4\",\"last_name\":\"Tester\"}" >/dev/null
+# Anon/non-admin can't reach the admin endpoints. Reuses the
+# NONADMIN cookies file from the upload check.
 FORBID_CODE="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$API/api/admin/dashboard" -b "$NONADMIN")"
 [ "$FORBID_CODE" = "403" ] || fail "non-admin /api/admin/dashboard expected 403, got $FORBID_CODE"
 ok "non-admin /api/admin/dashboard returns 403"
