@@ -365,7 +365,8 @@ async def chatbot_unanswered(
     """Logs that need admin attention: errored OR refusal-flagged.
 
     A log is "refusal-flagged" if its response contains a known refusal
-    phrase (PLAN §4.7 + the saia-chatbot-prompt skill).
+    phrase (PLAN §4.7 + the saia-chatbot-prompt skill) OR if the
+    chatbot code flagged the response via `is_refusal` (Phase 5).
     """
     refusal_ilikes = [ChatbotLog.response.ilike(f"%{p}%") for p in _REFUSAL_KEYWORDS]
     stmt = (
@@ -373,6 +374,7 @@ async def chatbot_unanswered(
         .where(
             or_(
                 ChatbotLog.error.isnot(None),
+                ChatbotLog.is_refusal.is_(True),
                 *refusal_ilikes,
             )
         )
@@ -387,8 +389,11 @@ async def chatbot_unanswered(
             "user_id": r.user_id,
             "session_id": r.session_id,
             "question": r.question,
+            "stripped_text": r.stripped_text,
             "response": r.response,
             "error": r.error,
+            "prompt_version": r.prompt_version,
+            "is_refusal": r.is_refusal,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
         }
