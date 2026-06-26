@@ -37,6 +37,18 @@ from app.schemas.admin import (
     ImportConfirmRequest,
     ImportJobStatus,
 )
+from app.schemas.wholesale import (
+    WholesaleSignupRequest,
+    WholesaleApplicationRead,
+    WholesaleDecisionRequest,
+    QuoteCreateRequest,
+    QuoteLineItemInput,
+    QuoteRead,
+    QuoteLineItemRead,
+    QuoteUpdateRequest,
+    WholesaleOrderRead,
+    WholesaleOrderStatusUpdate,
+)
 
 __all__ = [
     "UserCreate",
@@ -82,4 +94,14 @@ __all__ = [
     "ImportPreviewResponse",
     "ImportConfirmRequest",
     "ImportJobStatus",
+    "WholesaleSignupRequest",
+    "WholesaleApplicationRead",
+    "WholesaleDecisionRequest",
+    "QuoteCreateRequest",
+    "QuoteLineItemInput",
+    "QuoteRead",
+    "QuoteLineItemRead",
+    "QuoteUpdateRequest",
+    "WholesaleOrderRead",
+    "WholesaleOrderStatusUpdate",
 ]

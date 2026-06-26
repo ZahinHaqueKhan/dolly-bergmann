@@ -17,6 +17,7 @@ from app.routers.admin_coupons import router as admin_coupons_router
 from app.routers.health import router as health_router
 from app.routers.wishlist import router as wishlist_router
 from app.routers.uploads import router as uploads_router, mount_uploads
+from app.routers.wholesale import router as wholesale_router, admin_router as wholesale_admin_router
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -86,6 +87,8 @@ app.include_router(admin_coupons_router, prefix="/api")
 app.include_router(uploads_router, prefix="/api")
 app.include_router(wishlist_router)
 app.include_router(health_router)
+app.include_router(wholesale_router, prefix="/api")
+app.include_router(wholesale_admin_router, prefix="/api")
 
 mount_uploads(app)
 
