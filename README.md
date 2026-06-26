@@ -6,7 +6,7 @@ Fast, secure, SEO-optimized ecommerce platform for modest fashion (dresses, khim
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js 15 (App Router, TypeScript, Tailwind CSS) |
+| Frontend | Next.js 16 (App Router, TypeScript, Tailwind CSS) |
 | Backend | FastAPI (Python 3.12, async) |
 | Database | PostgreSQL + SQLAlchemy (async) + Alembic |
 | Auth | JWT (access + refresh tokens), Argon2 hashing |
@@ -17,7 +17,7 @@ Fast, secure, SEO-optimized ecommerce platform for modest fashion (dresses, khim
 ## Features
 
 - **Customer**: Browse catalog, cart, checkout, order history, wishlist
-- **Admin**: Dashboard, product CRUD, JSON bulk import, order management
+- **Admin**: Dashboard, product CRUD, JSON bulk import, order management, coupons, chatbot log review, image upload
 - **AI Chatbot**: SAIA-powered FAQ, size guidance, order status (authenticated)
 - **SEO**: SSR/SSG, JSON-LD structured data, sitemap, robots.txt, Open Graph
 
@@ -156,21 +156,39 @@ Store runs at `http://localhost:3000`.
 - `POST /api/chatbot` — Send message to SAIA (rate limited: 10 req/min)
 
 ### Admin
-- `GET /api/admin/dashboard` — Stats
-- `POST /api/admin/products/import/preview` — Validate JSON import
-- `POST /api/admin/products/import/confirm` — Execute import
-- `GET /api/admin/import/:job_id` — Import job status
+- `GET /api/admin/dashboard` — Stats (KPIs, recent orders, low stock)
+- `GET /api/products/admin/:id` — Admin product detail (incl. variants + is_active)
+- `POST /api/products/admin/bulk-active` — Toggle `is_active` for a list of product IDs
+- `POST /api/products/admin/bulk-delete` — Delete a list of product IDs
+- `POST /api/admin/products/import/preview` — Validate + persist JSON import, returns `job_id`
+- `POST /api/admin/products/import/confirm` — Execute persisted import job
+- `GET /api/admin/import/:job_id` — Poll import job status
+- `GET /api/admin/coupons` · `POST` · `PUT /:id` · `DELETE /:id` — Coupon CRUD
+- `GET /api/orders/admin` — List orders (filters: status, search by id/email, date range)
+- `GET /api/orders/admin/:id` — Order detail (admin)
+- `PUT /api/orders/admin/:id/status` — Update fulfillment status
+- `POST /api/orders/admin/:id/refund` — Issue a Stripe refund (full or partial)
+- `GET /api/admin/chatbot/unanswered` — Errored + refusal-flagged chatbot logs
+- `POST /api/admin/chatbot/:id/resolve` — Mark a log entry as resolved
+- `POST /api/uploads` — Multipart image upload (admin only, local `/uploads/products/`)
+- `GET /uploads/*` — Static-served uploaded files
 
 ## Admin JSON Import Format
 
+`schema_version` is the forward-compat header. v1 is the only supported
+version today; future versions will be branched on this field.
+
 ```json
 {
+  "schema_version": 1,
   "products": [
     {
       "name": "Classic Black Khimar",
       "slug": "classic-black-khimar",
       "description": "Premium jersey khimar...",
       "category": "Khimar",
+      "tags": ["bestseller", "essentials"],
+      "images": ["https://..."],
       "variants": [
         {
           "size": "S/M",
@@ -180,14 +198,29 @@ Store runs at `http://localhost:3000`.
           "sku": "KHIMAR-BLK-SM",
           "images": ["https://..."]
         }
-      ],
-      "tags": ["bestseller", "essentials"]
+      ]
     }
   ]
 }
 ```
 
-Price is in cents (e.g., 4900 = $49.00). Categories are auto-created if they don't exist.
+**Field rules** (enforced by `app/services/import_validator.py` + Pydantic):
+
+| Field | Rule |
+|---|---|
+| `slug` | `^[a-z0-9-]+$`, 1–120 chars |
+| `price` | integer cents, 1 ≤ price ≤ 1,000,000 |
+| `stock` | 0 ≤ stock ≤ 100,000 |
+| `sku` | `^[A-Z0-9-]{1,64}$` if provided |
+| `images` | each URL starts with `https://` or `/` |
+| `tags` | each ≤ 32 chars, ≤ 10 per product |
+| `category` | ≤ 64 chars |
+| `variants` | 1–50 per product |
+
+Price is in cents (e.g., 4900 = $49.00). Categories are auto-created
+if they don't exist. Slugs that already exist are SKIPPED (not
+overwritten) so re-running confirm is safe. The preview response
+includes a dry-run diff (`would_create`, `would_update`).
 
 ## Stripe (Test Mode)
 
@@ -285,6 +318,60 @@ If you don't have Stripe test keys yet, set `STRIPE_SECRET_KEY=sk_test_placehold
 - Input validation (Pydantic + Zod)
 - Security headers (CSP, HSTS, X-Frame-Options)
 - Audit logging for admin actions
+
+## Phase 4 — Admin (Store-Owner Self-Service)
+
+The store owner can run the shop without a developer. Sign in as admin
+and visit `/admin`. Every page under `/admin/*` runs a server-side
+role=admin check against `/api/auth/me`; non-admins (and anonymous
+visitors) are redirected to `/account/login?next=/admin`.
+
+**Admin pages:**
+
+| Path | Purpose |
+|---|---|
+| `/admin` | Dashboard — total products, total orders, total revenue, low stock, recent orders, quick actions |
+| `/admin/products` | Product list with search, category filter, status filter; 20 per page |
+| `/admin/products/new` | Create form (details + multi-image upload + variant editor) |
+| `/admin/products/[id]/edit` | Edit form, pre-filled |
+| `/admin/import` | Drop a `.json` file → preview → confirm → progress polling |
+| `/admin/orders` | Order list with status / search / date filters |
+| `/admin/orders/[id]` | Order detail, status update, refund action |
+| `/admin/coupons` | Coupon CRUD: percent / fixed_amount / free_shipping |
+| `/admin/chatbot` | Review errored + refusal-flagged chatbot exchanges, mark resolved |
+| `/admin/settings` | v1 placeholder |
+
+**Image upload:** images are multipart-POSTed to `/api/uploads` (admin
+only), written to `uploads/products/{token}.{ext}` (8 MB cap,
+JPEG/PNG/WebP/AVIF), and served back via `/uploads/*` (StaticFiles
+mount in `app.main`). Object storage (S3/Cloudflare) is a future
+phase.
+
+**Import jobs** are persisted to the `import_jobs` table — no more
+in-memory dict. The preview step validates the file, persists the job
+with `schema_version`, and returns a dry-run diff
+(`would_create` / `would_update`). The confirm step then runs the
+persisted job. Re-confirming a completed job returns 400. Slugs that
+already exist are SKIPPED (not overwritten) so the import is
+idempotent.
+
+**Coupons** support `percent`, `fixed_amount`, and `free_shipping`
+discount types, with `starts_at` / `ends_at` validity window,
+`usage_limit` (global), `per_user_limit`, and `is_active` toggle.
+`/api/checkout` applies the coupon locally and respects all four
+validity rules. A `free_shipping` coupon zeroes out the shipping cost
+even when the subtotal is below the $100 free-shipping threshold.
+
+**Run the smoke test:**
+
+```bash
+bash scripts/test_phase4.sh
+```
+
+The script exercises every admin endpoint end-to-end (auth, dashboard,
+products CRUD + image upload + bulk-active, JSON import, orders list
++ status update, coupons CRUD + validity, chatbot log resolve). Admin
+login is `admin@modestwear.test` / `admin_secret_password_123`.
 
 ## SEO Features
 
