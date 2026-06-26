@@ -1,0 +1,13 @@
+Your order is on the way, {first_name}!
+
+Order #{order_id} shipped via {carrier}.
+
+Tracking number: {tracking_number}
+
+Track your order: {site_url}/account/orders/{order_id}
+
+Carriers typically scan packages within 24 hours. If you don't
+see movement in 2 business days, reply to this email and we'll help.
+
+---
+ModestWear · modestwear.com

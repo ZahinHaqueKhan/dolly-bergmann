@@ -1,0 +1,15 @@
+YOUR ORDER HAS SHIPPED
+
+Your order is on the way, {first_name}.
+
+Order #{order_id} shipped via {carrier}.
+
+Tracking: {tracking_number}
+
+View your order: {site_url}/wholesale/orders/{order_id}
+
+We'll mark the order as delivered once the carrier confirms. Reply
+to this email if anything arrives damaged or incorrect.
+
+---
+ModestWear Wholesale · modestwear.com

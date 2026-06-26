@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<title>Payment received</title>
+</head>
+<body style="margin:0;padding:0;background-color:#fafaf9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c1917;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fafaf9;padding:32px 16px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border:1px solid #e7e5e4;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="background-color:#292524;padding:24px 32px;text-align:center;">
+            <p style="margin:0;font-family:Georgia,serif;font-size:24px;color:#ffffff;letter-spacing:0.02em;">ModestWear Wholesale</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px 32px;">
+            <p style="margin:0 0 8px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#15803d;font-weight:500;">Payment received</p>
+            <h1 style="margin:0 0 16px;font-family:Georgia,serif;font-size:24px;color:#292524;font-weight:500;">Thanks for the payment, {first_name}</h1>
+            <p style="margin:0 0 24px;line-height:1.6;font-size:15px;color:#44403c;">
+              We&apos;ve received your payment of <strong>{amount}</strong> for order <strong>#{order_id}</strong>. Your order is moving into production now and we&apos;ll send a shipping update with tracking as soon as it&apos;s on the way.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+              <tr>
+                <td style="background-color:#292524;border-radius:8px;">
+                  <a href="{site_url}/wholesale/orders/{order_id}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">View your order</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:0;line-height:1.6;font-size:15px;color:#44403c;">
+              Standard lead time is 7–14 business days from payment confirmation. If you have any questions, just reply to this email.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background-color:#fafaf9;padding:20px 32px;text-align:center;border-top:1px solid #e7e5e4;">
+            <p style="margin:0;font-size:12px;color:#78716c;">
+              ModestWear Wholesale &middot; <a href="{site_url}" style="color:#78716c;text-decoration:underline;">modestwear.com</a>
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

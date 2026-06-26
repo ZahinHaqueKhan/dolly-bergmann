@@ -1,0 +1,15 @@
+PAYMENT RECEIVED
+
+Thanks for the payment, {first_name}.
+
+We've received your payment of {amount} for order #{order_id}.
+Your order is moving into production now and we'll send a shipping
+update with tracking as soon as it's on the way.
+
+View your order: {site_url}/wholesale/orders/{order_id}
+
+Standard lead time is 7–14 business days from payment confirmation.
+If you have any questions, just reply to this email.
+
+---
+ModestWear Wholesale · modestwear.com

@@ -1,0 +1,22 @@
+ORDER CONFIRMED
+
+Thanks for your order, {first_name}!
+
+We've received your order #{order_id} and we're getting it ready.
+You'll get a shipping notification with tracking as soon as it ships.
+
+ITEMS
+-----
+{line_items_text}
+
+Subtotal: {subtotal}
+Shipping: {shipping}
+Tax: {tax}
+Total:   {total}
+
+View your order: {site_url}/account/orders/{order_id}
+
+If you have any questions, just reply to this email.
+
+---
+ModestWear · modestwear.com

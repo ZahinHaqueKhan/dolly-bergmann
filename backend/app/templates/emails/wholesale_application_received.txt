@@ -1,0 +1,15 @@
+WHOLESALE APPLICATION RECEIVED
+
+Thanks for applying, {first_name}!
+
+We've received your wholesale application for {company_name}. Our
+team is reviewing it now.
+
+Most applications are reviewed within one business day. You'll
+get an email the moment you're approved — and from there you can
+browse the catalog, request quotes, and place orders.
+
+If you have any questions in the meantime, just reply to this email.
+
+---
+ModestWear Wholesale · modestwear.com

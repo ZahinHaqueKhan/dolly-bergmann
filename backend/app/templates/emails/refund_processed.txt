@@ -1,0 +1,16 @@
+REFUND PROCESSED
+
+Your refund is on the way, {first_name}.
+
+We've processed a refund of {amount} for order #{order_id}. The funds
+will appear on your original payment method within 5–7 business days,
+depending on your bank.
+
+Refund amount: {amount}
+{reason}
+
+Thanks for your patience. If you have any questions, just reply to
+this email.
+
+---
+ModestWear · modestwear.com

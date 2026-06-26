@@ -1,0 +1,15 @@
+YOU'RE APPROVED!
+
+Welcome to the ModestWear wholesale program, {first_name}. Your
+account for {company_name} is now active.
+
+You can browse the catalog, build a Request-For-Quote (RFQ) by cart
+or by pasting a CSV, and accept priced quotes to create orders.
+Payment is offline (Net-30 by default via wire or check).
+
+Open the wholesale portal: {site_url}/wholesale
+
+If you have any questions, just reply to this email.
+
+---
+ModestWear Wholesale · modestwear.com

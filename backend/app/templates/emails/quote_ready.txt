@@ -1,0 +1,16 @@
+YOUR QUOTE IS READY
+
+Your quote #{quote_id} is ready for review. The full PDF is attached
+to this email; you can also view and accept it directly in the portal.
+
+Total:      {total}
+Valid until: {valid_until}
+
+Review & accept: {site_url}/wholesale/quotes/{quote_id}
+
+{admin_notes}
+
+This quote is valid for 30 days. Payment terms: Net-30 via wire or check.
+
+---
+ModestWear Wholesale · modestwear.com

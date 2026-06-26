@@ -1,0 +1,16 @@
+Welcome to ModestWear, {first_name}!
+
+Thanks for creating an account with ModestWear. We curate modest
+dresses, khimar, abaya, and accessories for the modern Muslim woman.
+
+Your account is ready to use. Sign in any time to view your orders,
+save items to your wishlist, and check out faster.
+
+View your account: {site_url}/account
+
+Warm regards,
+The ModestWear team
+
+---
+ModestWear · modestwear.com
+You received this email because you signed up for a ModestWear account.
