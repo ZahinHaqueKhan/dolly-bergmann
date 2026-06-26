@@ -125,7 +125,11 @@ app.add_middleware(
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
+# In the test environment we bump the rate limit so test runs don't
+# 429 each other. (The chatbot router has its own per-IP cap that
+# tests can target independently.)
+_test_rpm = 10_000 if settings.ENVIRONMENT == "test" else 100
+app.add_middleware(RateLimitMiddleware, requests_per_minute=_test_rpm)
 
 app.include_router(auth_router)
 app.include_router(products_router, prefix="/api")

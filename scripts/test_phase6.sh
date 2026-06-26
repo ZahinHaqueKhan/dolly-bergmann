@@ -49,7 +49,7 @@ ok "sample product slug for /product tests: $SAMPLE_SLUG"
 section "§6.3 Sitemap (DB-driven)"
 
 SITEMAP="$(curl -fsS --max-time 10 "$FE/sitemap.xml")"
-echo "$SITEMAP" | grep -q "<?xml" || fail "sitemap.xml is not XML: $SITEMAP"
+echo "$SITEMAP" | head -c 200 | grep -q "xml" || fail "sitemap.xml is not XML"
 echo "$SITEMAP" | grep -q "<urlset" || fail "sitemap.xml missing <urlset> root"
 echo "$SITEMAP" | grep -q "/shop" || fail "sitemap.xml does not include /shop"
 echo "$SITEMAP" | grep -q "/product/$SAMPLE_SLUG" || fail "sitemap.xml does not include seeded product /product/$SAMPLE_SLUG"

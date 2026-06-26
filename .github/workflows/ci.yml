@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dolly
+          POSTGRES_PASSWORD: dolly_secret_password
+          POSTGRES_DB: dolly_bergmann
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://dolly:dolly_secret_password@localhost:5432/dolly_bergmann
+      JWT_SECRET: ci-secret-key
+      ENVIRONMENT: test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install -U pip
+          pip install -r requirements.txt
+      - name: Apply migrations
+        run: |
+          . venv/bin/activate
+          venv/bin/alembic upgrade head
+      - name: Run tests
+        run: |
+          . venv/bin/activate
+          venv/bin/pytest tests/ --cov=app --cov-fail-under=35

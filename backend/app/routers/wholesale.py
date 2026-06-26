@@ -76,16 +76,6 @@ from app.schemas.wholesale import (
     WholesaleSignupRequest,
 )
 from app.services.audit import record_audit
-    QuoteCreateRequest,
-    QuoteLineItemRead,
-    QuoteRead,
-    QuoteUpdateRequest,
-    WholesaleApplicationRead,
-    WholesaleDecisionRequest,
-    WholesaleOrderRead,
-    WholesaleOrderStatusUpdate,
-    WholesaleSignupRequest,
-)
 
 
 router = APIRouter(prefix="/wholesale", tags=["wholesale"])
