@@ -564,6 +564,139 @@ applied. Admin login: `admin@modestwear.test` /
 - [x] Admin marks paid, updates status, adds tracking
 - [x] Buyer sees status updates in `/wholesale/orders`
 
+## Phase 5 — AI chatbot: SAIA integration
+
+The customer-facing chatbot at `frontend/components/ChatbotWidget.tsx`
+sends messages to the backend `/api/chatbot` endpoint, which proxies
+them to SAIA (a chat-completions API at
+`https://chat-ai.academiccloud.de/v1`). Failed SAIA calls return
+**HTTP 200 with a graceful fallback answer** — the API never 500s.
+
+### Prompt externalization (§5.1)
+
+The system prompt is **not** a hardcoded string. It is concatenated
+at request time from versioned Markdown files in
+`backend/app/prompts/`:
+
+| File | Always loaded? | Notes |
+|---|---|---|
+| `system_base.md` | yes | Tone, safety rules, refusal behavior |
+| `product_faq.v1.md` | yes | B2C FAQ + 10 most-asked questions |
+| `store_policies.md` | yes | Shipping, returns, sizing, payment policies |
+| `seasonal/ramadan.md` | Feb 18 – Mar 19 | Auto-loaded during the Ramadan window |
+| `seasonal/eid.md` | Eid al-Fitr + Eid al-Adha windows | Auto-loaded during Eid |
+| `wholesale_faq.v1.md` | approved wholesale users only | Phase 4.5 §4.5.9 — not duplicated here |
+
+The active bundle version is written to `ChatbotLog.prompt_version`
+(e.g. `base+v1+policies+ramadan+wholesale`) for A/B analysis. Seasonal
+addenda are detected by date — see `_seasonal_addendum()` in
+`backend/app/routers/chatbot.py`.
+
+### Guardrails (§5.2)
+
+Implemented in `backend/app/routers/chatbot.py`:
+
+- **PII strip.** On every input, the following patterns are replaced
+  with redaction tokens before the text is sent to SAIA:
+  - Credit card: `\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b` → `[REDACTED-CC]`
+  - SSN: `\b\d{3}-\d{2}-\d{4}\b` → `[REDACTED-SSN]`
+  - Email: `\b\S+@\S+\.\S+\b` → `[REDACTED-EMAIL]`
+  - Phone: international-ish 7+ digit patterns → `[REDACTED-PHONE]`
+  The raw user input is preserved in `ChatbotLog.question`; the
+  redacted version is in `ChatbotLog.stripped_text` (NULL when no PII
+  was detected).
+- **Truncate input at 500 chars.** Truncates cleanly, no error.
+- **Refusal detection.** After SAIA returns, the response is checked
+  against known refusal phrases (`"i can't help"`, `"i'm not able to"`,
+  etc.). If matched, `ChatbotLog.is_refusal = true`. The admin
+  unanswered list (`/api/admin/chatbot/unanswered`) now also returns
+  these rows.
+- **Blocked intents.** Patterns matching refund / cancel order /
+  change address / change payment / chargeback cause the system
+  prompt to be **appended with a redirect-to-support note**, and the
+  response includes `blocked_intent: "<label>"` so the client can
+  surface it.
+
+### Authenticated order-status lookup (§5.3)
+
+If the user is authenticated (cookie or Bearer token) AND the message
+contains one of `my order`, `where is`, `tracking`, `order status`,
+`where are my`, the system prompt is **augmented with the user's last
+3 orders** (B2C for `role=customer`, wholesale for `role=wholesale`).
+The injected context is status-only — no PII, no item details:
+
+```
+Recent orders (last 3, status only — no PII):
+Order #42: status=shipped, total=$49.99
+Order #39: status=delivered, total=$29.50
+```
+
+The system prompt explicitly authorizes this lookup.
+
+### Rate limiting (§5.4)
+
+10 req/min per IP for anonymous users, 30 req/min per authenticated
+user. Backed by Redis (`redis.asyncio`) using
+`INCR ratelimit:chatbot:{user:42|ip:1.2.3.4}` + `EXPIRE 60`.
+
+**Graceful fallback.** If Redis is unreachable, the router falls back
+to a process-local `deque` keyed by the same string. The endpoint
+never 500s on a Redis outage. `GET /api/chatbot/health` reports
+`redis_available: false` so admins can see the degradation.
+
+### Frontend widget (§5.5)
+
+`frontend/components/ChatbotWidget.tsx`:
+
+- Floating bottom-right button, slide-up panel.
+- On viewports < 768px, the panel is **full-screen** (replaces
+  `bottom-right` floating); on desktop it is a 384px × 576px panel.
+- **Markdown rendering** with `react-markdown` + `remark-gfm`. Inline
+  styles in `app/globals.css` under `.chatbot-prose` (no
+  `@tailwindcss/typography` dependency).
+- **localStorage** keeps the last 50 messages
+  (`modestwear.chatbot.history.v1`) and the session id
+  (`modestwear.chatbot.session.v1`).
+- **Accessibility**: `role="dialog"`, `aria-modal`, `aria-labelledby`,
+  focus trap, escape to close, focus restore on close,
+  `prefers-reduced-motion` disables the slide-up transition.
+- **Proxy** at `frontend/app/api/chatbot/route.ts` injects the
+  httpOnly `chatbot_session_id` cookie as `X-Session-Id` for the
+  backend, then forwards the request with the user's auth cookies
+  attached.
+
+### FAQ knowledge base (§5.6)
+
+The 10 most-asked questions are inlined in `product_faq.v1.md` (the
+"Most-asked questions" section). pgvector / RAG is deferred to v1.1
+per PLAN.
+
+### How to run
+
+```bash
+bash scripts/test_phase5.sh
+```
+
+The script covers: PII strip (with DB log assertion), blocked intent
+detection, order-status for an authenticated user, rate limit
+(anonymous 10/min, authenticated 30/min), and graceful Redis fallback
+(returns 400 on empty input, never 500). Backend must be running on
+`127.0.0.1:8000` with `alembic upgrade head` applied.
+
+### Exit criteria (from PLAN.md §5)
+
+- [x] Customer can ask "What's your return policy?" → accurate
+      answer (info in `store_policies.md` + `product_faq.v1.md`)
+- [x] Logged-in customer asks "Where is my order?" → real status
+      returned (last 3 orders injected as context)
+- [x] Logged-in B2B buyer asks "What's the MOQ?" → wholesale FAQ
+      answer (`wholesale_faq.v1.md` is appended; see Phase 4.5)
+- [x] Rate limit triggers 429 after the 10th anonymous request
+- [x] Failed SAIA calls return 200 with a graceful fallback — never
+      500
+- [x] PII in test input is stripped before the SAIA call (verified
+      via `ChatbotLog.stripped_text`)
+
 ## SEO Features
 
 - SSR product/category pages (indexable)
