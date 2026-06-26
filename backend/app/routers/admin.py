@@ -365,13 +365,13 @@ async def chatbot_unanswered(
     A log is "refusal-flagged" if its response contains a known refusal
     phrase (PLAN §4.7 + the saia-chatbot-prompt skill).
     """
-    refusal_pattern = "|".join(_REFUSAL_KEYWORDS)
+    refusal_ilikes = [ChatbotLog.response.ilike(f"%{p}%") for p in _REFUSAL_KEYWORDS]
     stmt = (
         select(ChatbotLog)
         .where(
             or_(
                 ChatbotLog.error.isnot(None),
-                ChatbotLog.response.ilike(f"%{refusal_pattern}%"),
+                *refusal_ilikes,
             )
         )
         .order_by(ChatbotLog.created_at.desc())
