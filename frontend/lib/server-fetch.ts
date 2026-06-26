@@ -29,7 +29,7 @@ export class ServerAuthError extends Error {
   }
 }
 
-async function backendFetch(
+export async function backendFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
@@ -60,6 +60,20 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   if (!res.ok) return null
   const user = (await res.json()) as AdminUser
   if (user.role !== 'admin' || !user.is_active) return null
+  return user
+}
+
+/**
+ * Return the current wholesale user (any state — pending/approved/rejected),
+ * or null if not authenticated as a wholesale user. Caller decides what
+ * to do based on `approved_at`.
+ */
+export async function getWholesaleUser(): Promise<AdminUser | null> {
+  const res = await backendFetch('/api/auth/me')
+  if (res.status === 401 || res.status === 403) return null
+  if (!res.ok) return null
+  const user = (await res.json()) as AdminUser
+  if (user.role !== 'wholesale' || !user.is_active) return null
   return user
 }
 

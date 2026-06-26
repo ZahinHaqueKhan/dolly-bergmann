@@ -1,18 +1,31 @@
 import os
 import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import decode_token_dep
 from app.config import settings
 from app.database import get_db
 from app.models.chatbot_log import ChatbotLog
+from app.models.user import User
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 
 request_counts: dict[str, list[float]] = {}
+
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+
+def _load_prompt(name: str) -> str:
+    p = PROMPTS_DIR / name
+    if not p.exists():
+        return ""
+    return p.read_text(encoding="utf-8")
+
 
 PRODUCT_FAQ_SYSTEM_PROMPT = """You are a knowledgeable and friendly AI assistant for ModestWear, an online modest fashion store selling dresses, khimar (headscarves), abaya, and related modest clothing.
 
@@ -90,16 +103,30 @@ async def chatbot_message(
         user_message = user_message[:500]
 
     user_context = ""
+    extra_system = ""
     if token_data:
         user_context = f"The user is authenticated (user_id: {token_data.user_id})."
+        # PLAN 4.5.9: load the wholesale FAQ addendum for approved
+        # wholesale buyers. Pending/rejected users get the base prompt
+        # only — they don't yet have access to the portal.
+        if token_data.role == "wholesale":
+            user_row = (
+                await db.execute(
+                    select(User).where(User.id == token_data.user_id)
+                )
+            ).scalar_one_or_none()
+            if user_row is not None and user_row.approved_at is not None:
+                extra_system = _load_prompt("wholesale_faq.v1.md")
     else:
         user_context = "The user is a guest (not authenticated)."
 
     messages = [
         {"role": "system", "content": PRODUCT_FAQ_SYSTEM_PROMPT},
         {"role": "system", "content": f"Context: {user_context}"},
-        {"role": "user", "content": user_message},
     ]
+    if extra_system:
+        messages.append({"role": "system", "content": extra_system})
+    messages.append({"role": "user", "content": user_message})
 
     try:
         client = get_saia_client()

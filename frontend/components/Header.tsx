@@ -61,6 +61,9 @@ export default function Header() {
           <Link href="/about" className="hover:text-stone-900">
             About
           </Link>
+          <Link href="/wholesale" className="hover:text-stone-900">
+            Wholesale
+          </Link>
         </nav>
         <div className="flex items-center gap-4">
           <Link href="/cart" className="relative p-2" aria-label="Cart">
@@ -146,6 +149,16 @@ export default function Header() {
                       role="menuitem"
                     >
                       Admin
+                    </Link>
+                  )}
+                  {user.role === 'wholesale' && (
+                    <Link
+                      href="/wholesale"
+                      onClick={() => setMenuOpen(false)}
+                      className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50"
+                      role="menuitem"
+                    >
+                      Wholesale portal
                     </Link>
                   )}
                   <button
