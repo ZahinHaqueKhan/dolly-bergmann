@@ -26,6 +26,16 @@ class Product(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, server_default="true", index=True
     )
+    # PLAN 4.5: B2B fields. b2b_only=True means the product is sold
+    # only through the wholesale portal (not in the public B2C shop).
+    # b2b_min_order_qty is the minimum quantity per variant on a quote
+    # line item. 1 means no constraint.
+    b2b_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    b2b_min_order_qty: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False, server_default="1"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

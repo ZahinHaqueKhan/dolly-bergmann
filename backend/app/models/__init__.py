@@ -13,6 +13,9 @@ from app.models.audit_log import AuditLog
 from app.models.chatbot_log import ChatbotLog
 from app.models.refresh_token import RefreshToken
 from app.models.import_job import ImportJob
+from app.models.wholesale_application import WholesaleApplication
+from app.models.quote import Quote, QuoteLineItem
+from app.models.wholesale_order import WholesaleOrder
 
 __all__ = [
     "Base",
@@ -30,4 +33,8 @@ __all__ = [
     "ChatbotLog",
     "RefreshToken",
     "ImportJob",
+    "WholesaleApplication",
+    "Quote",
+    "QuoteLineItem",
+    "WholesaleOrder",
 ]
