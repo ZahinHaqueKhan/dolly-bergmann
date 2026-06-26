@@ -81,6 +81,9 @@ export async function generateMetadata({
   const title = product.meta_title || `${product.name} — ModestWear`
   const description =
     product.meta_description || product.description.slice(0, 160)
+  const ogImages = product.images.length
+    ? product.images
+    : [`${SITE_URL}/og-default.png`]
   return {
     title,
     description,
@@ -93,18 +96,16 @@ export async function generateMetadata({
       description,
       url: `${SITE_URL}/product/${product.slug}`,
       siteName: 'ModestWear',
-      images: product.images.length
-        ? product.images.map((img) => ({
-            url: img,
-            alt: product.name,
-          }))
-        : undefined,
+      images: ogImages.map((img) => ({
+        url: img,
+        alt: product.name,
+      })),
     },
     twitter: {
       card: 'summary_large_image',
       title: product.name,
       description,
-      images: product.images.length ? [product.images[0]] : undefined,
+      images: [ogImages[0]],
     },
   }
 }

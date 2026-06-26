@@ -1,7 +1,8 @@
 YOUR QUOTE IS READY
 
-Your quote #{quote_id} is ready for review. The full PDF is attached
-to this email; you can also view and accept it directly in the portal.
+Hi {first_name}, your quote #{quote_id} is ready for review. The full
+PDF is attached to this email; you can also view and accept it
+directly in the portal.
 
 Total:      {total}
 Valid until: {valid_until}
