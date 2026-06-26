@@ -417,3 +417,51 @@ async def chatbot_resolve(
     log.resolved_by_id = current_admin.user_id
     await db.commit()
     return {"id": log.id, "resolved_at": log.resolved_at.isoformat()}
+
+
+# ---- PLAN 7.3 — Audit log viewer ----
+
+@router.get("/audit", response_model=dict)
+async def list_audit_log(
+    db: AsyncSession = Depends(get_db),
+    current_admin: TokenData = Depends(get_current_admin_user),
+    limit: int = 50,
+    offset: int = 0,
+    action: str | None = None,
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    admin_user_id: int | None = None,
+):
+    """List audit log entries (admin-only). Supports basic filtering
+    and pagination. Newest first.
+    """
+    from app.models.audit_log import AuditLog
+
+    stmt = select(AuditLog)
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+    if entity_type:
+        stmt = stmt.where(AuditLog.entity_type == entity_type)
+    if entity_id is not None:
+        stmt = stmt.where(AuditLog.entity_id == entity_id)
+    if admin_user_id is not None:
+        stmt = stmt.where(AuditLog.admin_user_id == admin_user_id)
+    stmt = stmt.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+    rows = (await db.execute(stmt)).scalars().all()
+    items = [
+        {
+            "id": r.id,
+            "admin_user_id": r.admin_user_id,
+            "action": r.action,
+            "entity_type": r.entity_type,
+            "entity_id": r.entity_id,
+            "details": r.details,
+            "ip": r.ip,
+            "ua": r.ua,
+            "method": r.method,
+            "path": r.path,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "limit": limit, "offset": offset}

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     BACKEND_URL: str = "http://localhost:8000"
     REDIS_URL: str = "redis://localhost:6379"
 
+    # Sentry is documented but disabled for v1. See main.py.
+    SENTRY_DSN: str = ""
+    ENVIRONMENT: str = "development"
+
     class Config:
         env_file = ".env"
 

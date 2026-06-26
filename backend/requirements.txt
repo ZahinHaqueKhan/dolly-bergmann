@@ -10,4 +10,6 @@ stripe
 python-multipart
 alembic
 pytest
+pytest-asyncio
+pytest-cov
 httpx
