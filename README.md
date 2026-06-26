@@ -872,3 +872,38 @@ Backend on 127.0.0.1:8000, frontend dev on 3010.
 - Open Graph + Twitter Card meta tags
 - Optimized images with srcset, WebP/AVIF, lazy loading
 - Core Web Vitals optimized (LCP, CLS)
+
+## Phase 7 — Hardening & launch
+
+The final phase locks down security, observability, automated tests, and
+operational docs so the store is ready to ship.
+
+### What was added
+
+- **Security headers** — `app/middleware.py` emits CSP, HSTS,
+  X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and
+  Permissions-Policy on every response.
+- **Strict CORS** — only the configured `FRONTEND_URL` is allowed;
+  credentials and the explicit method/header allowlist are locked down.
+- **Audit log** — new `audit_logs` table + `GET /api/admin/audit` page.
+  Hooks fire on coupon CRUD, wholesale approve/reject/send/mark-paid,
+  and chatbot-log resolve. Visible at `/admin/audit`.
+- **pytest suite** — 72 tests passing in `backend/tests/`, covering
+  auth, products, cart, coupons, chatbot, wholesale, orders, and
+  admin. Run with `cd backend && pytest`.
+- **CI workflow** — `.github/workflows/backend-ci.yml` runs the test
+  suite on every push and PR.
+- **Docs** — `docs/admin.md`, `docs/wholesale.md`,
+  `docs/launch-checklist.md`, and `docs/troubleshooting.md`.
+
+### Pointers
+
+- Security middleware: `backend/app/middleware.py`
+- Audit hooks: `backend/app/services/audit.py` + the routers that
+  call `record_audit(...)`
+- Tests: `backend/tests/` (run with `cd backend && pytest`)
+- CI: `.github/workflows/backend-ci.yml`
+- Admin guide: `docs/admin.md`
+- Wholesale guide: `docs/wholesale.md`
+- Launch checklist: `docs/launch-checklist.md`
+- Troubleshooting: `docs/troubleshooting.md`
