@@ -10,6 +10,7 @@ const NAV: { label: string; href: string }[] = [
   { label: 'Coupons', href: '/admin/coupons' },
   { label: 'Wholesale', href: '/admin/wholesale/applications' },
   { label: 'Chatbot Logs', href: '/admin/chatbot' },
+  { label: 'Audit Log', href: '/admin/audit' },
   { label: 'Settings', href: '/admin/settings' },
 ]
 

@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.coupon import Coupon
 from app.schemas.coupon import CouponCreate, CouponRead, CouponUpdate
 from app.schemas.user import TokenData
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/admin/coupons", tags=["admin-coupons"])
 
@@ -59,6 +60,15 @@ async def create_coupon(
         is_active=data.is_active,
     )
     db.add(coupon)
+    await db.flush()
+    await record_audit(
+        db,
+        admin_user_id=current_admin.user_id,
+        action="create",
+        entity_type="coupon",
+        entity_id=coupon.id,
+        details={"code": coupon.code, "discount_type": coupon.discount_type},
+    )
     await db.commit()
     await db.refresh(coupon)
     return coupon
@@ -98,8 +108,17 @@ async def update_coupon(
     if new_ends is not None and new_ends <= new_starts:
         raise HTTPException(status_code=400, detail="ends_at must be after starts_at")
 
+    before = {k: getattr(coupon, k) for k in patch.keys()}
     for field, value in patch.items():
         setattr(coupon, field, value)
+    await record_audit(
+        db,
+        admin_user_id=current_admin.user_id,
+        action="update",
+        entity_type="coupon",
+        entity_id=coupon.id,
+        details={"before": before, "patch": patch},
+    )
 
     await db.commit()
     await db.refresh(coupon)
@@ -117,6 +136,15 @@ async def delete_coupon(
     ).scalar_one_or_none()
     if coupon is None:
         raise HTTPException(status_code=404, detail="Coupon not found")
+    snapshot = {"id": coupon.id, "code": coupon.code, "discount_type": coupon.discount_type}
     await db.delete(coupon)
+    await record_audit(
+        db,
+        admin_user_id=current_admin.user_id,
+        action="delete",
+        entity_type="coupon",
+        entity_id=coupon_id,
+        details=snapshot,
+    )
     await db.commit()
     return None

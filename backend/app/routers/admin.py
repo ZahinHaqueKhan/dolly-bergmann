@@ -415,6 +415,14 @@ async def chatbot_resolve(
         raise HTTPException(status_code=404, detail="Chatbot log not found")
     log.resolved_at = datetime.utcnow()
     log.resolved_by_id = current_admin.user_id
+    from app.services.audit import record_audit
+    await record_audit(
+        db,
+        admin_user_id=current_admin.user_id,
+        action="resolve",
+        entity_type="chatbot_log",
+        entity_id=log.id,
+    )
     await db.commit()
     return {"id": log.id, "resolved_at": log.resolved_at.isoformat()}
 

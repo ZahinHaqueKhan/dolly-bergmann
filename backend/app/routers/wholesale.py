@@ -75,6 +75,17 @@ from app.schemas.wholesale import (
     WholesaleOrderStatusUpdate,
     WholesaleSignupRequest,
 )
+from app.services.audit import record_audit
+    QuoteCreateRequest,
+    QuoteLineItemRead,
+    QuoteRead,
+    QuoteUpdateRequest,
+    WholesaleApplicationRead,
+    WholesaleDecisionRequest,
+    WholesaleOrderRead,
+    WholesaleOrderStatusUpdate,
+    WholesaleSignupRequest,
+)
 
 
 router = APIRouter(prefix="/wholesale", tags=["wholesale"])
@@ -826,6 +837,14 @@ async def admin_approve_application(
         user.company_name = app_row.company_name
     if app_row.tax_id and not user.tax_id:
         user.tax_id = app_row.tax_id
+    await record_audit(
+        db,
+        admin_user_id=admin.user_id,
+        action="approve",
+        entity_type="wholesale_application",
+        entity_id=app_row.id,
+        details={"user_email": user.email, "company_name": app_row.company_name},
+    )
     await db.commit()
     print(
         f"[wholesale] APPROVAL email sent to {user.email} — "
@@ -860,6 +879,14 @@ async def admin_reject_application(
     app_row.decided_at = datetime.utcnow()
     app_row.rejection_reason = body.reason or "No reason provided"
     user.approved_at = None
+    await record_audit(
+        db,
+        admin_user_id=admin.user_id,
+        action="reject",
+        entity_type="wholesale_application",
+        entity_id=app_row.id,
+        details={"user_email": user.email, "reason": app_row.rejection_reason},
+    )
     await db.commit()
     print(
         f"[wholesale] REJECTION email sent to {user.email} — reason: {app_row.rejection_reason!r}"
@@ -892,6 +919,14 @@ async def admin_request_info(
     app_row.decided_by = admin.user_id
     app_row.decided_at = datetime.utcnow()
     app_row.rejection_reason = body.reason or "Please provide more information."
+    await record_audit(
+        db,
+        admin_user_id=admin.user_id,
+        action="request_info",
+        entity_type="wholesale_application",
+        entity_id=app_row.id,
+        details={"user_email": user.email, "reason": app_row.rejection_reason},
+    )
     await db.commit()
     print(
         f"[wholesale] INFO-REQUESTED email sent to {user.email} — "
@@ -1235,6 +1270,14 @@ async def admin_send_quote(
 
     quote.status = "sent"
     quote.sent_at = datetime.utcnow()
+    await record_audit(
+        db,
+        admin_user_id=token_data.user_id or 0,
+        action="send",
+        entity_type="quote",
+        entity_id=quote.id,
+        details={"user_email": user.email, "pdf_is_real_pdf": used_pdf},
+    )
     await db.commit()
     print(
         f"[wholesale] QUOTE email sent to {user.email} — "
@@ -1378,6 +1421,14 @@ async def admin_mark_paid(
     # flow awaiting_payment -> paid -> processing -> shipped -> delivered)
     if order.status == "awaiting_payment":
         order.status = "paid"
+    await record_audit(
+        db,
+        admin_user_id=token_data.user_id or 0,
+        action="mark_paid",
+        entity_type="wholesale_order",
+        entity_id=order.id,
+        details={"total_cents": order.total},
+    )
     await db.commit()
     # Re-fetch with eager loads so the serializer doesn't trigger
     # implicit IO on lazy-loaded relationships.
@@ -1437,6 +1488,18 @@ async def admin_update_order_status(
             )
         order.tracking_number = body.tracking_number
         order.shipping_carrier = body.shipping_carrier
+    await record_audit(
+        db,
+        admin_user_id=token_data.user_id or 0,
+        action="update_status",
+        entity_type="wholesale_order",
+        entity_id=order.id,
+        details={
+            "new_status": order.status,
+            "tracking_number": order.tracking_number,
+            "shipping_carrier": order.shipping_carrier,
+        },
+    )
     await db.commit()
     # Re-fetch with eager loads for serialization.
     order = (
