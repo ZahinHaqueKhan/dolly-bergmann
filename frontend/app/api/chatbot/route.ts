@@ -1,46 +1,94 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+
+const API_BASE_URL =
+  process.env.BACKEND_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'http://127.0.0.1:8000'
+
+function genSessionId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return 'sess-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
 
 export async function POST(req: NextRequest) {
   try {
     const { message } = await req.json()
     if (!message || typeof message !== 'string') {
-      return NextResponse.json({ error: 'message is required' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'message is required' },
+        { status: 400 }
+      )
     }
 
-    const sanitized = message.slice(0, 500).replace(/[<>]/g, '')
+    // Generate or reuse a session id, then persist it in a cookie
+    // so successive requests from the same browser share a session.
+    const cookieStore = await cookies()
+    let sessionId = cookieStore.get('chatbot_session_id')?.value
+    const isNewSession = !sessionId
+    if (!sessionId) {
+      sessionId = genSessionId()
+    }
 
-    const saiaUrl = process.env.SAIA_API_URL || process.env.NEXT_PUBLIC_SAIA_API_URL || 'http://localhost:8001/api'
-    const saiaKey = process.env.SAIA_API_KEY || 'dev-key'
+    // Forward the cookie header (for authenticated chat). The browser
+    // will include both auth cookies AND the new chatbot_session_id
+    // on the upstream request.
+    const cookieHeader = cookieStore
+      .getAll()
+      .map((c) => `${c.name}=${c.value}`)
+      .join('; ')
 
-    let response = 'Thank you for your message! Our team will respond shortly. For immediate help, please email us at support@modestwear.com'
-    let sources: string[] = []
+    const upstream = await fetch(`${API_BASE_URL}/api/chatbot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        'X-Session-Id': sessionId,
+      },
+      body: JSON.stringify({ message }),
+      // Don't follow redirects; pass through the status.
+    })
 
-    try {
-      const saiaRes = await fetch(`${saiaUrl}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${saiaKey}`,
-        },
-        body: JSON.stringify({
-          message: sanitized,
-          context: 'modest_fashion_ecommerce',
-        }),
-        signal: AbortSignal.timeout(5000),
+    // Read the upstream body (once).
+    const data = await upstream.json().catch(() => ({}))
+
+    const response = NextResponse.json(
+      {
+        response: data.response ?? null,
+        sources: data.sources ?? [],
+        prompt_version: data.prompt_version,
+        pii_detected: data.pii_detected,
+        is_refusal: data.is_refusal,
+        blocked_intent: data.blocked_intent,
+        session_id: sessionId,
+      },
+      { status: upstream.ok ? 200 : upstream.status }
+    )
+
+    if (isNewSession) {
+      response.cookies.set('chatbot_session_id', sessionId, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
       })
-
-      if (saiaRes.ok) {
-        const data = await saiaRes.json()
-        response = data.response || response
-        sources = data.sources || []
-      }
-    } catch {
-      response = 'Our AI assistant is temporarily unavailable. For questions about shipping, returns, or sizing, please email support@modestwear.com. We typically respond within 24 hours.'
     }
 
-    return NextResponse.json({ response, sources })
+    return response
   } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      {
+        response:
+          "I'm sorry, our AI assistant is temporarily unavailable. Please email support@modestwear.com.",
+        sources: [],
+        pii_detected: false,
+        is_refusal: false,
+        blocked_intent: null,
+      },
+      { status: 200 }
+    )
   }
 }
 
