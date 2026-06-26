@@ -373,6 +373,197 @@ products CRUD + image upload + bulk-active, JSON import, orders list
 + status update, coupons CRUD + validity, chatbot log resolve). Admin
 login is `admin@modestwear.test` / `admin_secret_password_123`.
 
+## Phase 4.5 — B2B Wholesale Portal
+
+Wholesale buyers self-serve quote requests, eliminating the email
+back-and-forth. The portal reuses the B2C catalog, components, and
+design system — there is no separate brand or stripe-style checkout.
+
+### Data model
+
+Four new tables plus field additions on `users` and `products` (single
+migration `phase_4_5_wholesale_applications_quotes_*.py`):
+
+- `wholesale_applications` — signup → approval. Fields: `user_id`,
+  `company_name`, `tax_id`, `country`, `phone`, `website`, `notes`,
+  `status` (`pending`|`approved`|`rejected`|`info_requested`),
+  `rejection_reason`, `decided_by`, `decided_at`, `created_at`.
+- `quotes` — RFQ + priced quote. Fields: `user_id`, `status`
+  (`draft`|`submitted`|`sent`|`accepted`|`declined`|`expired`),
+  `valid_until`, `shipping_cost`, `tax`, `notes`, `admin_notes`,
+  `pdf_path`, `created_at`, `sent_at`, `responded_at`.
+- `quote_line_items` — `quote_id`, `variant_id`, `quantity`,
+  `unit_price` (set by admin; null until priced).
+- `wholesale_orders` — `quote_id` (unique), `user_id`, `status`
+  (`awaiting_payment`|`paid`|`processing`|`shipped`|`delivered`|`cancelled`),
+  `payment_status` (`pending`|`paid`|`partial`), `paid_at`,
+  `tracking_number`, `shipping_carrier`, `total`, `created_at`.
+- `users` — `role` enum already has `wholesale` from Phase 2; new fields
+  `company_name`, `tax_id`, `approved_at`.
+- `products` — `b2b_only` (boolean, default `false`), `b2b_min_order_qty`
+  (integer, default `1`).
+
+### API surface
+
+`backend/app/routers/wholesale.py` exposes two routers.
+
+**Buyer (`/api/wholesale/...`):**
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/signup` | Create user (role=wholesale) + pending application, auto-login |
+| GET | `/me` | Current user + application status |
+| GET | `/quotes` | List my quotes |
+| POST | `/quotes` | Create a new RFQ (rate-limited 5/day) — supports `line_items` cart OR `csv` (`sku,quantity` lines) |
+| GET | `/quotes/{id}` | One quote (owner or admin) |
+| POST | `/quotes/{id}/accept` | Accept priced quote → creates WholesaleOrder |
+| POST | `/quotes/{id}/decline` | Decline priced quote |
+| GET | `/orders` | List my wholesale orders |
+| GET | `/orders/{id}` | One order |
+
+**Admin (`/api/admin/wholesale/...`):**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/applications` | List all applications |
+| GET | `/applications/{id}` | One application |
+| POST | `/applications/{id}/approve` | Approve — sets `User.approved_at`, email user (stdout) |
+| POST | `/applications/{id}/reject` | Reject — sets `rejection_reason`, email user |
+| POST | `/applications/{id}/request-info` | Set status `info_requested` with reason |
+| GET | `/quotes` | All quotes (admin view) |
+| GET | `/quotes/{id}` | One quote (admin) |
+| PUT | `/quotes/{id}` | Set per-line `unit_price_cents`, `shipping_cost`, `tax`, `notes`, `admin_notes`, `valid_until` |
+| POST | `/quotes/{id}/send` | Mark `status=sent`, generate PDF, email buyer |
+| GET | `/quotes/{id}/pdf` | Serve the generated PDF (or HTML fallback) |
+| GET | `/orders` | All wholesale orders |
+| GET | `/orders/{id}` | One order |
+| POST | `/orders/{id}/mark-paid` | Set `payment_status=paid`, email buyer |
+| PUT | `/orders/{id}/status` | Update status; tracking_number/carrier required on `shipped` |
+
+### Frontend pages
+
+**Buyer portal (`/wholesale/*` — `noindex, nofollow`):**
+
+| Path | Purpose |
+|---|---|
+| `/wholesale` | Catalog (all products, no prices, "Request quote" badge, add-to-quote modal with size/color/qty) |
+| `/wholesale/signup` | Apply for a wholesale account |
+| `/wholesale/pending` | Status page for pending/rejected/info_requested users |
+| `/wholesale/quote/new` | Build RFQ (cart or CSV paste, both converge to same submit) |
+| `/wholesale/quotes` | List of submitted quotes |
+| `/wholesale/quotes/[id]` | View one quote; Accept/Decline buttons when `status=sent` |
+| `/wholesale/orders` | List of orders |
+| `/wholesale/orders/[id]` | Order detail with status timeline |
+
+**Admin (`/admin/wholesale/*` — lives in the existing admin layout, new "Wholesale" tab):**
+
+| Path | Purpose |
+|---|---|
+| `/admin/wholesale/applications` | Approve / reject / request info |
+| `/admin/wholesale/quotes` | All quotes |
+| `/admin/wholesale/quotes/[id]` | Price RFQ, set shipping/tax/notes, send |
+| `/admin/wholesale/orders` | All orders |
+| `/admin/wholesale/orders/[id]` | Mark paid, update status, add tracking |
+
+### End-to-end flow
+
+1. Buyer visits `/wholesale/signup`, fills company info, submits.
+2. Backend creates a `User` (`role=wholesale`) + `WholesaleApplication`
+   (`status=pending`) and auto-logs them in. Email notification is
+   printed to stdout (deferred to Resend in Phase 6).
+3. Admin sees the application at `/admin/wholesale/applications`,
+   clicks Approve. `User.approved_at` is set; the buyer is emailed.
+4. Approved buyer logs in, browses `/wholesale`, adds items to a
+   draft quote (variant selector + quantity, MOQ enforced).
+5. Buyer goes to `/wholesale/quote/new`, completes the RFQ via cart
+   OR pastes a CSV (`sku,quantity` lines), submits.
+6. Admin reviews at `/admin/wholesale/quotes/[id]`, sets unit prices
+   per line, adds shipping/tax/notes, clicks **Send quote**.
+7. Backend generates the quote PDF (WeasyPrint if available, otherwise
+   an HTML file pointed to by `pdf_path` — both are served at
+   `/api/admin/wholesale/quotes/{id}/pdf`). Status → `sent`, email
+   printed to stdout.
+8. Buyer opens `/wholesale/quotes/[id]`, sees the priced quote with
+   Accept/Decline buttons.
+9. **Accept** → creates a `WholesaleOrder` (`status=awaiting_payment`,
+   `payment_status=pending`). **Decline** → `status=declined`.
+10. Admin marks the order paid once the wire/check arrives
+    (`/admin/wholesale/orders/[id]`, "Mark as paid"). Email printed to
+    stdout. Order moves to `status=paid`.
+11. Admin ships the order: status → `shipped`, adds `tracking_number`
+    and `shipping_carrier`.
+12. Buyer sees the status + tracking in `/wholesale/orders/[id]`. The
+    status timeline progresses `awaiting_payment → paid → processing →
+    shipped → delivered`.
+
+### Constraints honored
+
+- **No separate design system.** B2B pages reuse the same Tailwind
+  components (`bg-stone-*`, `text-rose-*`, `font-serif` for headings,
+  the `statusColor()` helper from `admin/page.tsx`, the existing
+  `ProductCard` patterns). All B2B color usage stays in stone/rose.
+- **No prices on the portal.** Every product on `/wholesale` shows a
+  "Request quote" badge instead of a price.
+- **No Stripe for B2B.** Wholesale uses offline payment (Net-30 by
+  default). The order's `payment_status` is flipped to `paid` manually
+  by the admin once funds clear.
+- **`<meta name="robots" content="noindex, nofollow">`** on every
+  `/wholesale/*` page (set in the wholesale `layout.tsx` and on
+  individual page metadata).
+- **Auth gate.** Every `/wholesale/*` page requires `role=wholesale`.
+  Approved-only sub-pages (`/wholesale`, `/wholesale/quote/new`,
+  `/wholesale/quotes/*`, `/wholesale/orders/*`) additionally check
+  `User.approved_at != null` and redirect pending users to
+  `/wholesale/pending`.
+- **Rate limit: 5 quote submissions per buyer per day.** Enforced in
+  `app/routers/wholesale.py` via an in-memory deque. Will be replaced
+  with Redis-backed limiting in Phase 5.4.
+- **MOQ enforcement.** Backend rejects any line item below the
+  product's `b2b_min_order_qty`; the add-to-quote modal also enforces
+  it client-side.
+- **PDF generation.** Tries WeasyPrint first; on any failure, falls
+  back to writing a styled HTML file and pointing `pdf_path` at it.
+  Both formats are served at the same `/api/admin/wholesale/quotes/{id}/pdf`
+  endpoint. The HTML template is rendered from
+  `_render_quote_html(quote, user)` in `wholesale.py`.
+- **Email.** All notifications (signup, approval, rejection, info
+  request, quote sent, payment received) are printed to stdout with
+  subject + recipient + key data. Resend integration is deferred to
+  Phase 6.
+
+### Chatbot wholesale addendum (§4.5.9)
+
+`backend/app/prompts/wholesale_faq.v1.md` is a Markdown addendum that
+covers: how to apply, MOQ, Net-30 payment terms, shipping, lead times,
+custom orders, and how the portal works. It is loaded into the chatbot
+system prompt **only** when the request is authenticated AND
+`User.role == "wholesale"` AND `User.approved_at is not None`. Pending
+or rejected users see the standard B2C prompt.
+
+### How to run
+
+The end-to-end script covers apply → approve → RFQ via CSV → admin
+sends → buyer accepts → admin marks paid → admin ships → buyer sees
+tracking. It also covers the 5/day RFQ rate limit and the customer-403
+guard. From the repo root:
+
+```bash
+bash scripts/test_phase4.5.sh
+```
+
+Backend must be running on `127.0.0.1:8000` with `alembic upgrade head`
+applied. Admin login: `admin@modestwear.test` /
+`admin_secret_password_123`.
+
+### Exit criteria (from PLAN.md §4.5)
+
+- [x] Wholesale buyer can apply, get approved, log in, browse catalog
+- [x] Buyer can build RFQ via cart OR CSV upload
+- [x] Admin receives notification, builds quote, sends PDF
+- [x] Buyer accepts quote → order created
+- [x] Admin marks paid, updates status, adds tracking
+- [x] Buyer sees status updates in `/wholesale/orders`
+
 ## SEO Features
 
 - SSR product/category pages (indexable)
