@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getAdminUser, adminGet, ServerAuthError } from '@/lib/admin-server'
+import { getAdminUser, adminGet, ServerAuthError } from '@/lib/server-fetch'
 
 export const dynamic = 'force-dynamic'
 

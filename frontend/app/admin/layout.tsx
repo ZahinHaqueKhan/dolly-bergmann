@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getAdminUser } from '@/lib/admin-server'
+import { getAdminUser } from '@/lib/server-fetch'
 
 const NAV: { label: string; href: string }[] = [
   { label: 'Dashboard', href: '/admin' },
