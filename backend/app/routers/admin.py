@@ -16,6 +16,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.service import decode_token_dep
 from app.database import get_db
@@ -81,6 +82,7 @@ async def admin_dashboard(
             select(Variant)
             .where(Variant.stock < 5)
             .join(Product)
+            .options(selectinload(Variant.product))
             .limit(10)
         )
     ).scalars().all()

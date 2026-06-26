@@ -14,7 +14,9 @@ _PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    # Plain str (not EmailStr) so dev/test TLDs like .test are accepted
+    # at the wire. We normalize (lower) before querying the DB.
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
