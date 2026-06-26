@@ -1352,7 +1352,14 @@ async def admin_mark_paid(
     _require_admin(token_data)
     order = (
         await db.execute(
-            select(WholesaleOrder).where(WholesaleOrder.id == order_id)
+            select(WholesaleOrder)
+            .options(
+                selectinload(WholesaleOrder.quote)
+                .selectinload(Quote.line_items)
+                .selectinload(QuoteLineItem.variant)
+                .selectinload(Variant.product),
+            )
+            .where(WholesaleOrder.id == order_id)
         )
     ).scalar_one_or_none()
     if order is None:
@@ -1361,7 +1368,10 @@ async def admin_mark_paid(
             detail="Order not found",
         )
     if order.payment_status == "paid":
-        return _serialize_order(order)
+        user = (
+            await db.execute(select(User).where(User.id == order.user_id))
+        ).scalar_one()
+        return _serialize_order(order, user)
     order.payment_status = "paid"
     order.paid_at = datetime.utcnow()
     # Move order to 'paid' status (per PLAN 4.5.8 — wholesale orders
@@ -1369,6 +1379,20 @@ async def admin_mark_paid(
     if order.status == "awaiting_payment":
         order.status = "paid"
     await db.commit()
+    # Re-fetch with eager loads so the serializer doesn't trigger
+    # implicit IO on lazy-loaded relationships.
+    order = (
+        await db.execute(
+            select(WholesaleOrder)
+            .options(
+                selectinload(WholesaleOrder.quote)
+                .selectinload(Quote.line_items)
+                .selectinload(QuoteLineItem.variant)
+                .selectinload(Variant.product),
+            )
+            .where(WholesaleOrder.id == order_id)
+        )
+    ).scalar_one()
     user = (
         await db.execute(select(User).where(User.id == order.user_id))
     ).scalar_one()
@@ -1389,7 +1413,14 @@ async def admin_update_order_status(
     _require_admin(token_data)
     order = (
         await db.execute(
-            select(WholesaleOrder).where(WholesaleOrder.id == order_id)
+            select(WholesaleOrder)
+            .options(
+                selectinload(WholesaleOrder.quote)
+                .selectinload(Quote.line_items)
+                .selectinload(QuoteLineItem.variant)
+                .selectinload(Variant.product),
+            )
+            .where(WholesaleOrder.id == order_id)
         )
     ).scalar_one_or_none()
     if order is None:
@@ -1407,6 +1438,19 @@ async def admin_update_order_status(
         order.tracking_number = body.tracking_number
         order.shipping_carrier = body.shipping_carrier
     await db.commit()
+    # Re-fetch with eager loads for serialization.
+    order = (
+        await db.execute(
+            select(WholesaleOrder)
+            .options(
+                selectinload(WholesaleOrder.quote)
+                .selectinload(Quote.line_items)
+                .selectinload(QuoteLineItem.variant)
+                .selectinload(Variant.product),
+            )
+            .where(WholesaleOrder.id == order_id)
+        )
+    ).scalar_one()
     user = (
         await db.execute(select(User).where(User.id == order.user_id))
     ).scalar_one()
