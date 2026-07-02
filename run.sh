@@ -39,15 +39,14 @@ check_docker() {
     err "Docker daemon is not running. Start Docker Desktop."
     exit 1
   fi
-  if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-    err "docker-compose is not installed."
-    exit 1
-  fi
-  DOCKER_COMPOSE="docker compose"
+  export PATH="$HOME/.local/bin:$PATH"
   if docker compose version &> /dev/null; then
     DOCKER_COMPOSE="docker compose"
-  else
+  elif command -v docker-compose &> /dev/null; then
     DOCKER_COMPOSE="docker-compose"
+  else
+    err "Docker Compose plugin not found. Install it or run: ./run.sh dev"
+    exit 1
   fi
 }
 

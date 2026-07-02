@@ -1,6 +1,7 @@
 'use client'
 import { create } from 'zustand'
 import { getMe, login as apiLogin, logout as apiLogout, register as apiRegister } from '@/lib/api'
+import { useCartStore } from './cart'
 
 export type UserRole = 'customer' | 'wholesale' | 'admin'
 
@@ -35,8 +36,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await getMe()
       set({ user, status: 'authenticated' })
+      // Re-hydrate the cart with the auth cookie so the server picks
+      // up the user cart (or, if they had a guest session, merges it).
+      useCartStore.getState().setUser(user.id)
     } catch {
       set({ user: null, status: 'unauthenticated' })
+      useCartStore.getState().setUser(null)
     }
   },
 
@@ -47,12 +52,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     // values from before a password change or role change).
     const user = await getMe()
     set({ user, status: 'authenticated' })
+    useCartStore.getState().setUser(user.id)
   },
 
   signUp: async (data) => {
     await apiRegister(data)
     const user = await getMe()
     set({ user, status: 'authenticated' })
+    useCartStore.getState().setUser(user.id)
   },
 
   signOut: async () => {
@@ -60,9 +67,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       await apiLogout()
     } finally {
       set({ user: null, status: 'unauthenticated' })
+      useCartStore.getState().setUser(null)
     }
   },
 
-  setUser: (user) =>
-    set({ user, status: user ? 'authenticated' : 'unauthenticated' }),
+  setUser: (user) => {
+    set({ user, status: user ? 'authenticated' : 'unauthenticated' })
+    useCartStore.getState().setUser(user?.id ?? null)
+  },
 }))
