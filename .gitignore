@@ -37,3 +37,11 @@ dist/
 
 # Logs
 *.log
+
+# AI agent configs (local only)
+PLAN.md
+plan.md
+opencode.json
+.opencode/
+*AGENTS.md
+*CLAUDE.md
